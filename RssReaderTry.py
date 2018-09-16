@@ -5,12 +5,6 @@
 
 Rssリーダを作ってみる。
 sublimeでビルドするとエラーになるけど、terminalからだと成功するからこれでいいや。
-
-========================================
-バージョン1.0(2016-03-16)
-    完成。
-バージョン1.1(2017-09-22)
-    久々に開いてdocとか書いた。
 '''
 
 import feedparser, datetime, json, webbrowser, sqlite3, os
@@ -168,6 +162,7 @@ class MyRssReader:
             fopen.write(htmlData)
 
         return os.path.realpath("html/"+fileName)
+
 
 if __name__ == "__main__":
     myrss = MyRssReader()
