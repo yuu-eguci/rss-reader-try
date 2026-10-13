@@ -3,7 +3,8 @@ RssReaderTry
 
 Rssリーダを作ってみる。DB接続とか feedparser とか webbrowser とか。
 
-フィード (RSS / Atom) を読んで記事一覧の HTML を書き出す CLI。読んだ内容は SQLite にキャッシュして、6 時間以内ならネットに行かずキャッシュから作る。
+RSS / Atom を読んで、記事一覧の HTML を作る CLI。
+読んだ内容は SQLite に保存する。6時間以内ならキャッシュから作る。
 
 - Docker: 対応!
 - Python: 3.15!
@@ -15,23 +16,22 @@ Rssリーダを作ってみる。DB接続とか feedparser とか webbrowser と
 
 ```bash
 docker build -t rss-reader-try .
-
-# 同梱のサンプルフィード (ネット不要) を読んで ./html/ に HTML を書き出す
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try examples/sample-feed.xml
-# fetched: 3 articles from "Sample Feed" -> html/Sample-Feed.html
+```
 
-# もう一度実行すると、6 時間以内なのでキャッシュ (./my_rss.sqlite3) から作る
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try examples/sample-feed.xml
-# cache: 3 articles from "Sample Feed" (fetched 2026/10/13 07:15 UTC) -> html/Sample-Feed.html
+ネット不要のサンプルから、3件の記事を載せた `html/Sample-Feed.html` ができる。
+同じコマンドをもう一度実行すると、`my_rss.sqlite3` のキャッシュを使う。
 
-# 本物のフィードも読める (ページの URL でも、フィードを案内していればそれを読む)。
-# いくつも渡すと、まとめページ html/index.html も作る
+URL を渡すと、ネットから読む。複数渡すと `html/index.html` もできる。
+
+```bash
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try examples/sample-feed.xml https://qiita.com/mpyw/feed.atom
-# cache: 3 articles from "Sample Feed" (fetched 2026/10/13 07:15 UTC) -> html/Sample-Feed.html
-# fetched: ... articles from "mpywの記事 - Qiita" -> html/mpywの記事-Qiita.html
-# index: 2 pages -> html/index.html
+```
 
-# ほかの RSS リーダの購読リスト (OPML) もそのまま読める
+ほかの RSS リーダの購読リスト (OPML) も読める。
+同梱のリストには外部 URL があるので、こちらはネットが必要。
+
+```bash
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try --opml examples/subscriptions.opml
 ```
 
@@ -61,7 +61,7 @@ rss-reader-try [-h] [--opml FILE] [--db DB] [--out OUT] [--max-age HOURS] [--ope
 - フィードが読めない (ファイルがない、HTTP エラー、フィードじゃない、など) ときは `error:` で始まるメッセージを標準エラーに出す。ほかのフィードはそのまま続ける。
 - フィードを 2 つ以上渡すと、書き出したページへのリンク集 `index.html` も作って `index:` の行を出す。
 - 終了コードは、全部うまくいけば 0、読めないフィードが 1 つでもあれば 1。
-- 前にも読んだことのあるフィードを取りに行ったときは、前回なかった記事に HTML で **NEW** を付けて、`fetched: ... (2 new) -> ...` のように新しい記事の数を出す。
+- 前にも読んだことのあるフィードを取りに行ったときは、前回なかった記事に HTML で `NEW` を付ける。`fetched: ... (2 new) -> ...` のように新しい記事の数も出す。
 - 取りに行くときは前回の `ETag` / `Last-Modified` を送る。サーバが「変わってない」(304) と返したらキャッシュの記事をそのまま使って `fetched: ... (not modified) -> ...` を出す。
 - 取りに行って失敗しても、古いキャッシュがあればそれで HTML を作る。このときは `warning:` を標準エラーに出して `cache:` の行を出す (終了コード 0)。
 - OPML ファイルが読めないときは `error:` を出して、何も読まずに終了コード 1。
@@ -92,7 +92,7 @@ scripts/e2e.sh
 docker run --rm rss-reader-try:dev uv audit --locked --preview-features audit-command
 ```
 
-CI (GitHub Actions) でも同じものを回している。
+CI (GitHub Actions) にも同じ検証を設定してある。
 
 ## セキュリティまわり
 
@@ -100,5 +100,6 @@ CI (GitHub Actions) でも同じものを回している。
 - HTML には Content-Security-Policy を付けてスクリプトを動かさない。
 - 出力ファイル名に `/` や `..` が入らないようにしている。
 - ターミナルに出すメッセージからは制御文字 (エスケープシーケンスなど) や文字の向きを変える文字を `?` に置き換える。フィードのタイトルでターミナルをいじられないように。
-- フィードの取得にはタイムアウト (30 秒) とサイズ上限 (10 MB) がある。リダイレクトは `http` / `https` だけ追う。
-- Docker イメージは Alpine ベースで小さめ (Debian slim より OS パッケージの既知脆弱性がずっと少ない)。root ではないユーザで動く。`--read-only --cap-drop ALL --security-opt no-new-privileges` を付けても動く (CI で確認している)。
+- フィードの取得にはタイムアウト (30 秒) とサイズ上限 (10 MB) がある。gzip で圧縮して送ってもらい、サイズ上限は展開したあとの大きさにかける (圧縮爆弾よけ)。リダイレクトは `http` / `https` だけ追う。
+- Docker イメージは Alpine ベースで、root ではないユーザで動く。
+- `--read-only --cap-drop ALL --security-opt no-new-privileges` を付けても動く。この条件を CI の動作確認にも使っている。

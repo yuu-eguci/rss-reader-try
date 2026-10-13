@@ -1,5 +1,6 @@
 """Read a feed from a URL or a local file and turn it into plain data."""
 
+import gzip
 import socket
 import time
 from dataclasses import dataclass, replace
@@ -77,6 +78,28 @@ class _HttpOnlyRedirectHandler(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+def _http_get(
+    url: str, *, etag: str | None, last_modified: str | None, timeout: float, max_bytes: int
+) -> tuple[bytes, HTTPMessage]:
+    """GET `url`, reading at most `max_bytes` + 1 (decompressed) bytes."""
+    headers = {"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"}
+    if etag:
+        headers["If-None-Match"] = etag
+    if last_modified:
+        headers["If-Modified-Since"] = last_modified
+    request = Request(url, headers=headers)  # noqa: S310 - only called for http(s)
+    with build_opener(_HttpOnlyRedirectHandler).open(request, timeout=timeout) as response:
+        if response.headers.get("Content-Encoding", "").lower() in {"gzip", "x-gzip"}:
+            # The size limit applies to the decompressed data (no gzip bombs).
+            with gzip.GzipFile(fileobj=response) as unzipped:
+                data = unzipped.read(max_bytes + 1)
+        else:
+            data = response.read(max_bytes + 1)
+            if len(data) <= max_bytes and response.length:
+                raise HTTPException("connection closed before the end of the response")
+        return data, response.headers
+
+
 def read_source(
     source: str,
     *,
@@ -93,18 +116,13 @@ def read_source(
     try:
         scheme = urlsplit(source).scheme
         if scheme in HTTP_SCHEMES:
-            request_headers = {"User-Agent": USER_AGENT}
-            if etag:
-                request_headers["If-None-Match"] = etag
-            if last_modified:
-                request_headers["If-Modified-Since"] = last_modified
-            opener = build_opener(_HttpOnlyRedirectHandler)
-            request = Request(source, headers=request_headers)  # noqa: S310 - scheme checked
-            with opener.open(request, timeout=timeout) as response:
-                data = response.read(max_bytes + 1)
-                if len(data) <= max_bytes and response.length:
-                    raise HTTPException("connection closed before the end of the response")
-                response_headers = response.headers
+            data, response_headers = _http_get(
+                source,
+                etag=etag,
+                last_modified=last_modified,
+                timeout=timeout,
+                max_bytes=max_bytes,
+            )
         elif not scheme:
             with Path(source).open("rb") as file:
                 data = file.read(max_bytes + 1)
@@ -115,7 +133,7 @@ def read_source(
         if error.code == HTTPStatus.NOT_MODIFIED and (etag or last_modified):
             raise NotModified from error
         raise FeedError(f"cannot read {source}: {error}") from error
-    except (OSError, HTTPException, ValueError) as error:
+    except (OSError, HTTPException, ValueError, EOFError) as error:
         detail = getattr(error, "reason", error)
         if isinstance(detail, socket.gaierror):
             # The libc message alone can be cryptic ("Try again" on musl).

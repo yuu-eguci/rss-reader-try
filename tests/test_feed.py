@@ -1,3 +1,4 @@
+import gzip
 import socket
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -344,3 +345,34 @@ def test_mark_new() -> None:
     )
 
     assert [a.new for a in mark_new(feed, old).articles] == [True, False, False, True]
+
+
+def test_gzip_response(feed_server: FeedServer) -> None:
+    body = gzip.compress(SAMPLE_FEED.read_bytes())
+    feed_server.routes["/feed"] = (200, {"Content-Encoding": "gzip"}, body)
+
+    feed = fetch(feed_server.url("/feed"), NOW)
+
+    assert feed.title == "Sample Feed"
+    assert feed_server.requests[0]["Accept-Encoding"] == "gzip"
+
+
+def test_gzip_size_limit_applies_after_decompression(feed_server: FeedServer) -> None:
+    bomb = gzip.compress(b"x" * 1_000_000)
+    feed_server.routes["/bomb"] = (200, {"Content-Encoding": "gzip"}, bomb)
+
+    assert len(bomb) < 10_000
+    with pytest.raises(FeedError, match="larger than 10000 bytes"):
+        read_source(feed_server.url("/bomb"), max_bytes=10_000)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"not gzip at all", gzip.compress(b"<rss>" * 100)[:-20]],
+    ids=["broken", "truncated"],
+)
+def test_bad_gzip_response(feed_server: FeedServer, body: bytes) -> None:
+    feed_server.routes["/feed"] = (200, {"Content-Encoding": "gzip"}, body)
+
+    with pytest.raises(FeedError, match="cannot read"):
+        read_source(feed_server.url("/feed"))
