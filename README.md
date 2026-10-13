@@ -72,6 +72,13 @@ uv run rss-reader-try --open examples/sample-feed.xml
 docker build --target dev -t rss-reader-try:dev .
 docker run --rm rss-reader-try:dev
 
+# できあがったイメージを、ローカルの HTTP サーバ (コンテナ) 相手に動かして確かめる (ネット不要)
+docker build -t rss-reader-try .
+scripts/e2e.sh
+# ok   fetch over HTTP
+# ok   second run uses the cache
+# ...
+
 # 依存ライブラリに既知の脆弱性がないか調べる (要ネット)
 docker run --rm rss-reader-try:dev uv audit --locked --preview-features audit-command
 ```

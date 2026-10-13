@@ -37,3 +37,6 @@ jobs:
           run examples/sample-feed.xml | tee /dev/stderr | grep -q '^cache: 3 articles'
           grep -q 'はじめての RSS リーダ' html/Sample-Feed.html
           if run missing.xml; then exit 1; fi
+
+      - name: End-to-end test
+        run: scripts/e2e.sh
