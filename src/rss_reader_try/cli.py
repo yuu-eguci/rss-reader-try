@@ -12,7 +12,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 from rss_reader_try import store
-from rss_reader_try.feed import Feed, FeedError, NotModified, fetch
+from rss_reader_try.feed import Feed, FeedError, NotModified, fetch, mark_new
 from rss_reader_try.opml import read_opml
 from rss_reader_try.render import (
     format_time,
@@ -75,7 +75,7 @@ def is_fresh(fetched_at: datetime, now: datetime, max_age: timedelta) -> bool:
 
 
 def _get_feed(args: argparse.Namespace, source: str, now: datetime) -> tuple[Feed, str]:
-    """Return the feed and where it came from: "cache", "fetched" or "not modified"."""
+    """Return the feed and where it came from: "cache", "fetched", "updated" or "not modified"."""
     cached = store.load(args.db, source)
     if cached is None:
         feed, origin = fetch(source, now), "fetched"
@@ -83,9 +83,10 @@ def _get_feed(args: argparse.Namespace, source: str, now: datetime) -> tuple[Fee
         return cached, "cache"
     else:
         try:
-            feed, origin = fetch(source, now, cached), "fetched"
+            feed, origin = mark_new(fetch(source, now, cached), cached), "updated"
         except NotModified:
-            feed, origin = replace(cached, fetched_at=now), "not modified"
+            articles = tuple(replace(article, new=False) for article in cached.articles)
+            feed, origin = replace(cached, fetched_at=now, articles=articles), "not modified"
         except FeedError as error:
             _say(f"warning: {error}; using the cached copy", error=True)
             return cached, "cache"
@@ -109,6 +110,9 @@ def _report(feed: Feed, origin: str, path: Path) -> None:
         _say(f"cache: {summary} (fetched {format_time(feed.fetched_at)}) -> {path}")
     elif origin == "not modified":
         _say(f"fetched: {summary} (not modified) -> {path}")
+    elif origin == "updated":
+        new = sum(article.new for article in feed.articles)
+        _say(f"fetched: {summary} ({new} new) -> {path}")
     else:
         _say(f"fetched: {summary} -> {path}")
 

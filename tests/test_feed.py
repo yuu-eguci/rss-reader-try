@@ -7,7 +7,15 @@ from pathlib import Path
 import pytest
 from conftest import FIXTURES, SAMPLE_FEED, FeedServer
 
-from rss_reader_try.feed import Article, FeedError, NotModified, fetch, read_source
+from rss_reader_try.feed import (
+    Article,
+    Feed,
+    FeedError,
+    NotModified,
+    fetch,
+    mark_new,
+    read_source,
+)
 
 NOW = datetime(2026, 10, 13, 7, 15, tzinfo=UTC)
 
@@ -312,3 +320,27 @@ def test_no_discovery_for_local_files(tmp_path: Path) -> None:
 
     with pytest.raises(FeedError, match="not a feed"):
         fetch(str(page), NOW)
+
+
+def test_mark_new() -> None:
+    old = Feed(
+        source="s",
+        title="t",
+        site_url="",
+        fetched_at=NOW,
+        articles=(
+            Article(title="kept", url="https://e/1", date=None, new=True),
+            Article(title="no url", url="", date=None),
+        ),
+    )
+    feed = replace(
+        old,
+        articles=(
+            Article(title="added", url="https://e/2", date=None),
+            Article(title="kept, renamed", url="https://e/1", date=None, new=True),
+            Article(title="no url", url="", date=None),
+            Article(title="another without url", url="", date=None),
+        ),
+    )
+
+    assert [a.new for a in mark_new(feed, old).articles] == [True, False, False, True]

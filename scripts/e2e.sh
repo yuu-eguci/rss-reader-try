@@ -70,6 +70,15 @@ check "second run uses the cache" 0 '^cache: 3 articles from "Sample Feed" \(fet
     "$URL/sample-feed.xml"
 check "unchanged feed is not downloaded again (304)" 0 '^fetched: 3 articles .*\(not modified\)' \
     --max-age 0 "$URL/sample-feed.xml"
+cp "$WORK/feeds/sample-feed.xml" "$WORK/feeds/news.xml"
+check "first fetch of a feed" 0 '^fetched: 3 articles from "Sample Feed" -> ' --out news "$URL/news.xml"
+sleep 1 # the server compares modification times in whole seconds
+awk '!done && /<item>/ { print "<item><title>Breaking</title><link>https://example.com/new</link></item>"; done = 1 } 1' \
+    "$WORK/feeds/sample-feed.xml" >"$WORK/feeds/news.xml"
+check "new articles are counted" 0 '^fetched: 4 articles from "Sample Feed" \(1 new\) -> ' \
+    --max-age 0 --out news "$URL/news.xml"
+check_file "new articles are marked" news/Sample-Feed.html \
+    '<strong>NEW</strong> <a href="https://example.com/new"' 'NEW</strong> <a href="https://example.com/articles'
 check "feed found from an HTML page" 0 '^fetched: 3 articles from "Sample Feed"' \
     --db discovery.sqlite3 "$URL/blog.html"
 check "several feeds and an index" 1 '^index: 2 pages -> html/index.html$' \

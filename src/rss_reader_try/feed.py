@@ -38,6 +38,7 @@ class Article:
     title: str
     url: str
     date: str | None  # "YYYY/MM/DD"
+    new: bool = False  # not in the previously fetched copy
 
 
 @dataclass(frozen=True)
@@ -136,6 +137,18 @@ def _format_date(parsed: time.struct_time | None) -> str | None:
     if parsed is None:
         return None
     return f"{parsed.tm_year:04d}/{parsed.tm_mon:02d}/{parsed.tm_mday:02d}"
+
+
+def mark_new(feed: Feed, previous: Feed) -> Feed:
+    """Flag the articles of `feed` that `previous` did not have."""
+    seen = {article.url or article.title for article in previous.articles}
+    return replace(
+        feed,
+        articles=tuple(
+            replace(article, new=(article.url or article.title) not in seen)
+            for article in feed.articles
+        ),
+    )
 
 
 class _FeedLinkFinder(HTMLParser):

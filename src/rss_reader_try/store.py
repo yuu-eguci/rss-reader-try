@@ -67,7 +67,9 @@ def save(db: Path, feed: Feed) -> None:
         "title": feed.title,
         "siteUrl": feed.site_url,
         "fetchedAt": feed.fetched_at.isoformat(),
-        "articles": [{"title": a.title, "url": a.url, "date": a.date} for a in feed.articles],
+        "articles": [
+            {"title": a.title, "url": a.url, "date": a.date, "new": a.new} for a in feed.articles
+        ],
         "etag": feed.etag,
         "lastModified": feed.last_modified,
     }

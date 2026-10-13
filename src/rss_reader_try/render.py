@@ -46,7 +46,8 @@ def _page(body: str) -> str:
 
 def render_html(feed: Feed) -> str:
     items = "\n".join(
-        f"<li>{article.date or '----/--/--'} -- {_link(article.url, article.title)}</li>"
+        f"<li>{article.date or '----/--/--'} -- {'<strong>NEW</strong> ' if article.new else ''}"
+        f"{_link(article.url, article.title)}</li>"
         for article in feed.articles
     )
     return _page(f"""<h3>Articles of site: {_link(feed.site_url, feed.title)}</h3>
@@ -56,11 +57,17 @@ def render_html(feed: Feed) -> str:
 <h4>This RSS was made at {format_time(feed.fetched_at)}</h4>""")
 
 
+def _new_count(feed: Feed) -> str:
+    new = sum(article.new for article in feed.articles)
+    return f", {new} new" if new else ""
+
+
 def render_index(pages: Sequence[tuple[Feed, str]], now: datetime) -> str:
     """Link to each (feed, file name) page."""
     items = "\n".join(
         f'<li><a href="{escape(quote(name))}">{escape(feed.title)}</a>'
-        f" -- {plural(len(feed.articles), 'article')} (fetched {format_time(feed.fetched_at)})</li>"
+        f" -- {plural(len(feed.articles), 'article')}{_new_count(feed)}"
+        f" (fetched {format_time(feed.fetched_at)})</li>"
         for feed, name in pages
     )
     return _page(f"""<h3>Feeds</h3>

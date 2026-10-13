@@ -63,7 +63,7 @@ def test_max_age_zero_always_fetches(workdir: Path, capsys: pytest.CaptureFixtur
     assert run(["--max-age", "0", "feed.xml"]) == 0
 
     assert capsys.readouterr().out == (
-        'fetched: 0 articles from "Empty Feed" -> html/Empty-Feed.html\n'
+        'fetched: 0 articles from "Empty Feed" (0 new) -> html/Empty-Feed.html\n'
     )
 
 
@@ -354,3 +354,21 @@ def test_sample_opml(monkeypatch: pytest.MonkeyPatch) -> None:
         "examples/sample-feed.xml",
         "https://qiita.com/mpyw/feed.atom",
     ]
+
+
+def test_new_articles_are_counted(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    text = (workdir / "feed.xml").read_text()
+    (workdir / "feed.xml").write_text(text.replace("articles/3", "articles/0"))
+    run(["feed.xml"])
+    (workdir / "feed.xml").write_text(text)
+    capsys.readouterr()
+
+    assert run(["--max-age", "0", "feed.xml"]) == 0
+    assert run(["feed.xml"]) == 0
+
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == 'fetched: 3 articles from "Sample Feed" (1 new) -> html/Sample-Feed.html'
+    assert out[1].startswith("cache: ")
+    page = (workdir / "html" / "Sample-Feed.html").read_text()
+    assert page.count("<strong>NEW</strong>") == 1
+    assert '<strong>NEW</strong> <a href="https://example.com/articles/3"' in page

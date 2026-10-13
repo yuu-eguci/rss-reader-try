@@ -15,7 +15,7 @@ FEED = Feed(
     fetched_at=datetime(2026, 10, 13, 7, 15, tzinfo=UTC),
     articles=(
         Article(title="first", url="https://example.com/1", date="2016/04/03"),
-        Article(title="no date", url="", date=None),
+        Article(title="no date", url="", date=None, new=True),
     ),
 )
 

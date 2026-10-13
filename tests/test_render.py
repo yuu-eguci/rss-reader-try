@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -134,3 +135,20 @@ def test_only_http_links_are_linked(url: str) -> None:
     html = render_html(feed)
 
     assert "<a " not in html
+
+
+def test_new_articles_are_marked() -> None:
+    feed = replace(
+        FEED,
+        articles=(
+            Article(title="fresh", url="https://example.com/2", date="2016/04/04", new=True),
+            *FEED.articles,
+        ),
+    )
+
+    html = render_html(feed)
+    index = render_index([(feed, "Example.html")], NOW)
+
+    assert '<li>2016/04/04 -- <strong>NEW</strong> <a href="https://example.com/2"' in html
+    assert html.count("NEW") == 1
+    assert " -- 3 articles, 1 new (fetched " in index
