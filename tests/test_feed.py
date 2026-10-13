@@ -1,0 +1,161 @@
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from conftest import FIXTURES, SAMPLE_FEED, FeedServer
+
+from rss_reader_try.feed import Article, FeedError, fetch, read_source
+
+NOW = datetime(2026, 10, 13, 7, 15, tzinfo=UTC)
+
+
+def test_fetch_rss_file() -> None:
+    feed = fetch(str(SAMPLE_FEED), NOW)
+
+    assert feed.source == str(SAMPLE_FEED)
+    assert feed.title == "Sample Feed"
+    assert feed.site_url == "https://example.com/"
+    assert feed.fetched_at == NOW
+    assert feed.articles[0] == Article(
+        title="【サンプル】はじめての RSS リーダ",
+        url="https://example.com/articles/3",
+        date="2016/04/03",
+    )
+    assert [a.date for a in feed.articles] == ["2016/04/03", "2016/04/02", "2016/04/01"]
+
+
+def test_fetch_atom_file() -> None:
+    feed = fetch(str(FIXTURES / "atom.xml"), NOW)
+
+    assert feed.title == "Atom Feed"
+    assert feed.site_url == "https://atom.example.com/"
+    assert feed.articles == (
+        Article(title="Atom entry", url="https://atom.example.com/entry", date="2016/04/04"),
+    )
+
+
+def test_fetch_feed_without_articles() -> None:
+    feed = fetch(str(FIXTURES / "empty.xml"), NOW)
+
+    assert feed.title == "Empty Feed"
+    assert feed.articles == ()
+
+
+def test_missing_fields_get_fallbacks() -> None:
+    source = str(FIXTURES / "sparse.xml")
+    feed = fetch(source, NOW)
+
+    assert feed.title == source
+    assert feed.site_url == ""
+    assert feed.articles == (Article(title="(no title)", url="", date=None),)
+
+
+def test_not_a_feed() -> None:
+    with pytest.raises(FeedError, match="not a feed"):
+        fetch(str(FIXTURES / "not-a-feed.html"), NOW)
+
+
+def test_missing_file() -> None:
+    with pytest.raises(FeedError, match="No such file"):
+        fetch(str(FIXTURES / "nope.xml"), NOW)
+
+
+@pytest.mark.parametrize("source", ["file:///etc/passwd", "ftp://example.com/feed.xml"])
+def test_unsupported_scheme(source: str) -> None:
+    with pytest.raises(FeedError, match="unsupported"):
+        fetch(source, NOW)
+
+
+def test_external_entities_are_not_resolved(tmp_path: Path) -> None:
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP-SECRET")
+    xxe = tmp_path / "xxe.xml"
+    xxe.write_text(
+        f'<?xml version="1.0"?>\n<!DOCTYPE rss [<!ENTITY xxe SYSTEM "{secret.as_uri()}">]>\n'
+        '<rss version="2.0"><channel><title>t</title>'
+        "<item><title>&xxe;</title></item></channel></rss>\n"
+    )
+
+    feed = fetch(str(xxe), NOW)
+
+    assert "TOP-SECRET" not in repr(feed)
+
+
+def test_file_size_limit(tmp_path: Path) -> None:
+    big = tmp_path / "big.xml"
+    big.write_bytes(b"x" * 11)
+
+    with pytest.raises(FeedError, match="larger than 10 bytes"):
+        read_source(str(big), max_bytes=10)
+    assert read_source(str(big), max_bytes=11) == b"x" * 11
+
+
+def test_fetch_over_http(feed_server: FeedServer) -> None:
+    feed_server.routes["/feed"] = (200, {}, SAMPLE_FEED.read_bytes())
+
+    feed = fetch(feed_server.url("/feed"), NOW)
+
+    assert feed.title == "Sample Feed"
+    assert len(feed.articles) == 3
+    assert feed_server.user_agents[0].startswith("rss-reader-try/")
+
+
+def test_relative_links_resolve_against_feed_url(feed_server: FeedServer) -> None:
+    body = (
+        b'<rss version="2.0"><channel><title>t</title><link>/</link>'
+        b"<item><title>a</title><link>/posts/1</link></item></channel></rss>"
+    )
+    feed_server.routes["/blog/feed"] = (200, {}, body)
+
+    feed = fetch(feed_server.url("/blog/feed"), NOW)
+
+    assert feed.site_url == feed_server.url("/")
+    assert feed.articles[0].url == feed_server.url("/posts/1")
+
+
+def test_http_error(feed_server: FeedServer) -> None:
+    with pytest.raises(FeedError, match="HTTP Error 404"):
+        fetch(feed_server.url("/missing"), NOW)
+
+
+def test_http_size_limit(feed_server: FeedServer) -> None:
+    feed_server.routes["/big"] = (200, {}, b"x" * 11)
+
+    with pytest.raises(FeedError, match="larger than 10 bytes"):
+        read_source(feed_server.url("/big"), max_bytes=10)
+
+
+def test_http_timeout(feed_server: FeedServer) -> None:
+    feed_server.delay = 1.0
+    feed_server.routes["/slow"] = (200, {}, SAMPLE_FEED.read_bytes())
+
+    with pytest.raises(FeedError, match="timed out"):
+        read_source(feed_server.url("/slow"), timeout=0.2)
+
+
+def test_redirect_within_http_is_followed(feed_server: FeedServer) -> None:
+    feed_server.routes["/old"] = (301, {"Location": feed_server.url("/new")}, b"")
+    feed_server.routes["/new"] = (200, {}, SAMPLE_FEED.read_bytes())
+
+    assert fetch(feed_server.url("/old"), NOW).title == "Sample Feed"
+
+
+@pytest.mark.parametrize("target", ["ftp://127.0.0.1:1/feed.xml", "file:///etc/passwd"])
+def test_redirect_to_other_scheme_is_refused(feed_server: FeedServer, target: str) -> None:
+    feed_server.routes["/redirect"] = (302, {"Location": target}, b"")
+
+    with pytest.raises(FeedError, match="redirect"):
+        read_source(feed_server.url("/redirect"))
+
+
+def test_truncated_response(feed_server: FeedServer) -> None:
+    feed_server.routes["/truncated"] = (200, {"Content-Length": "1000"}, b"<rss")
+
+    with pytest.raises(FeedError, match="cannot read"):
+        read_source(feed_server.url("/truncated"))
+
+
+@pytest.mark.parametrize("source", ["http://127.0.0.1:notaport/feed.xml", "http://[::1/feed.xml"])
+def test_invalid_url(source: str) -> None:
+    with pytest.raises(FeedError, match="cannot read"):
+        fetch(source, NOW)

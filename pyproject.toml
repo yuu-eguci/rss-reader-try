@@ -1,0 +1,41 @@
+[project]
+name = "rss-reader-try"
+version = "2.0.0"
+description = "Read an RSS / Atom feed, cache it in SQLite and write the articles as an HTML page."
+readme = "README.md"
+requires-python = ">=3.15"
+dependencies = [
+    "feedparser>=6.0.14",
+]
+
+[project.scripts]
+rss-reader-try = "rss_reader_try.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py315"
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "N", "UP", "B", "S", "C4", "DTZ", "PTH", "SIM", "RET", "PT",
+    "PL", "RUF", "ANN", "ERA",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["--strict-markers"]
+filterwarnings = ["error"]

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Sample Feed</title>
+    <link>https://example.com/</link>
+    <description>rss-reader-try のサンプル</description>
+    <item>
+      <title>【サンプル】はじめての RSS リーダ</title>
+      <link>https://example.com/articles/3</link>
+      <pubDate>Sun, 03 Apr 2016 12:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>【サンプル】SQLite でキャッシュする</title>
+      <link>https://example.com/articles/2</link>
+      <pubDate>Sat, 02 Apr 2016 12:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>【サンプル】feedparser を使ってみる</title>
+      <link>https://example.com/articles/1</link>
+      <pubDate>Fri, 01 Apr 2016 12:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

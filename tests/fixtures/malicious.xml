@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>../../etc/passwd &lt;script&gt;alert(1)&lt;/script&gt;</title>
+    <link>javascript:alert(1)</link>
+    <item>
+      <title>&lt;img src=x onerror=alert(1)&gt;</title>
+      <link>javascript:alert(2)</link>
+      <pubDate>Sun, 03 Apr 2016 12:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>quote ' and " and &amp;</title>
+      <link>https://example.com/?a=1&amp;b='2'</link>
+      <pubDate>Sun, 03 Apr 2016 12:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
