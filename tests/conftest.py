@@ -16,12 +16,12 @@ class FeedServer:
     def __init__(self) -> None:
         self.routes: dict[str, tuple[int, dict[str, str], bytes]] = {}
         self.delay = 0.0
-        self.user_agents: list[str] = []
+        self.requests: list[dict[str, str]] = []
         server = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
-                server.user_agents.append(self.headers.get("User-Agent", ""))
+                server.requests.append(dict(self.headers.items()))
                 time.sleep(server.delay)
                 status, headers, body = server.routes.get(self.path, (404, {}, b"not found"))
                 self.send_response(status)
@@ -46,7 +46,9 @@ class FeedServer:
 @pytest.fixture
 def feed_server() -> Iterator[FeedServer]:
     server = FeedServer()
-    thread = threading.Thread(target=server.httpd.serve_forever, daemon=True)
+    thread = threading.Thread(
+        target=server.httpd.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
     thread.start()
     yield server
     server.httpd.shutdown()

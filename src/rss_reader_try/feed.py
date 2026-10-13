@@ -2,9 +2,10 @@
 
 import socket
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from email.message import Message
+from http import HTTPStatus
 from http.client import HTTPException
 from pathlib import Path
 from typing import IO, override
@@ -38,6 +39,15 @@ class Feed:
     site_url: str
     fetched_at: datetime
     articles: tuple[Article, ...]
+    etag: str | None = None
+    last_modified: str | None = None
+
+
+@dataclass(frozen=True)
+class Download:
+    data: bytes | None  # None: not modified since the validators that were sent
+    etag: str | None = None
+    last_modified: str | None = None
 
 
 class _HttpOnlyRedirectHandler(HTTPRedirectHandler):
@@ -58,18 +68,32 @@ class _HttpOnlyRedirectHandler(HTTPRedirectHandler):
 
 
 def read_source(
-    source: str, *, timeout: float = TIMEOUT_SECONDS, max_bytes: int = MAX_BYTES
-) -> bytes:
-    """Return the raw bytes of an http(s) URL or a local file."""
+    source: str,
+    *,
+    etag: str | None = None,
+    last_modified: str | None = None,
+    timeout: float = TIMEOUT_SECONDS,
+    max_bytes: int = MAX_BYTES,
+) -> Download:
+    """Read an http(s) URL (conditionally, if validators are given) or a local file."""
+    validators = Download(None)
     try:
         scheme = urlsplit(source).scheme
         if scheme in HTTP_SCHEMES:
+            headers = {"User-Agent": USER_AGENT}
+            if etag:
+                headers["If-None-Match"] = etag
+            if last_modified:
+                headers["If-Modified-Since"] = last_modified
             opener = build_opener(_HttpOnlyRedirectHandler)
-            request = Request(source, headers={"User-Agent": USER_AGENT})  # noqa: S310 - scheme checked
+            request = Request(source, headers=headers)  # noqa: S310 - scheme checked
             with opener.open(request, timeout=timeout) as response:
                 data = response.read(max_bytes + 1)
                 if len(data) <= max_bytes and response.length:
                     raise HTTPException("connection closed before the end of the response")
+                validators = Download(
+                    None, response.headers.get("ETag"), response.headers.get("Last-Modified")
+                )
         elif not scheme:
             with Path(source).open("rb") as file:
                 data = file.read(max_bytes + 1)
@@ -77,6 +101,8 @@ def read_source(
             raise FeedError(f"unsupported feed source: {source} (use http(s) or a file path)")
     except HTTPError as error:
         error.close()
+        if error.code == HTTPStatus.NOT_MODIFIED and (etag or last_modified):
+            return Download(None, etag, last_modified)
         raise FeedError(f"cannot read {source}: {error}") from error
     except (OSError, HTTPException, ValueError) as error:
         detail = getattr(error, "reason", error)
@@ -86,7 +112,7 @@ def read_source(
         raise FeedError(f"cannot read {source}: {detail}") from error
     if len(data) > max_bytes:
         raise FeedError(f"{source} is larger than {max_bytes} bytes")
-    return data
+    return replace(validators, data=data)
 
 
 def _format_date(parsed: time.struct_time | None) -> str | None:
@@ -95,11 +121,20 @@ def _format_date(parsed: time.struct_time | None) -> str | None:
     return f"{parsed.tm_year:04d}/{parsed.tm_mon:02d}/{parsed.tm_mday:02d}"
 
 
-def fetch(source: str, now: datetime) -> Feed:
-    """Read and parse the feed at `source`."""
-    data = read_source(source)
+def fetch(source: str, now: datetime, cached: Feed | None = None) -> Feed | None:
+    """Read and parse the feed at `source`.
+
+    Returns None if the server says that `cached` is still up to date.
+    """
+    download = read_source(
+        source,
+        etag=cached.etag if cached else None,
+        last_modified=cached.last_modified if cached else None,
+    )
+    if download.data is None:
+        return None
     headers = {"content-location": source} if urlsplit(source).scheme in HTTP_SCHEMES else {}
-    parsed = feedparser.parse(data, response_headers=headers)
+    parsed = feedparser.parse(download.data, response_headers=headers)
     if not parsed.get("version") and not parsed.entries:
         raise FeedError(f"not a feed: {source}")
     return Feed(
@@ -115,4 +150,6 @@ def fetch(source: str, now: datetime) -> Feed:
             )
             for entry in parsed.entries
         ),
+        etag=download.etag,
+        last_modified=download.last_modified,
     )

@@ -1,4 +1,5 @@
 import socket
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -88,7 +89,7 @@ def test_file_size_limit(tmp_path: Path) -> None:
 
     with pytest.raises(FeedError, match="larger than 10 bytes"):
         read_source(str(big), max_bytes=10)
-    assert read_source(str(big), max_bytes=11) == b"x" * 11
+    assert read_source(str(big), max_bytes=11).data == b"x" * 11
 
 
 def test_fetch_over_http(feed_server: FeedServer) -> None:
@@ -98,7 +99,8 @@ def test_fetch_over_http(feed_server: FeedServer) -> None:
 
     assert feed.title == "Sample Feed"
     assert len(feed.articles) == 3
-    assert feed_server.user_agents[0].startswith("rss-reader-try/")
+    assert feed_server.requests[0]["User-Agent"].startswith("rss-reader-try/")
+    assert "If-None-Match" not in feed_server.requests[0]
 
 
 def test_relative_links_resolve_against_feed_url(feed_server: FeedServer) -> None:
@@ -170,3 +172,40 @@ def test_unknown_host(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(FeedError, match=r"cannot resolve host feeds\.example \(Try again\)$"):
         read_source("http://feeds.example/feed.xml")
+
+
+def test_fetch_keeps_validators(feed_server: FeedServer) -> None:
+    validators = {"ETag": '"v1"', "Last-Modified": "Sun, 03 Apr 2016 12:00:00 GMT"}
+    feed_server.routes["/feed"] = (200, validators, SAMPLE_FEED.read_bytes())
+
+    feed = fetch(feed_server.url("/feed"), NOW)
+
+    assert feed is not None
+    assert feed.etag == '"v1"'
+    assert feed.last_modified == "Sun, 03 Apr 2016 12:00:00 GMT"
+
+
+def test_not_modified_returns_none(feed_server: FeedServer) -> None:
+    validators = {"ETag": '"v1"', "Last-Modified": "Sun, 03 Apr 2016 12:00:00 GMT"}
+    feed_server.routes["/feed"] = (200, validators, SAMPLE_FEED.read_bytes())
+    cached = fetch(feed_server.url("/feed"), NOW)
+    feed_server.routes["/feed"] = (304, {}, b"")
+
+    assert fetch(feed_server.url("/feed"), NOW, cached) is None
+
+    assert feed_server.requests[1]["If-None-Match"] == '"v1"'
+    assert feed_server.requests[1]["If-Modified-Since"] == "Sun, 03 Apr 2016 12:00:00 GMT"
+
+
+def test_unexpected_not_modified_is_an_error(feed_server: FeedServer) -> None:
+    feed_server.routes["/feed"] = (304, {}, b"")
+
+    with pytest.raises(FeedError, match="HTTP Error 304"):
+        fetch(feed_server.url("/feed"), NOW)
+
+
+def test_local_file_ignores_validators() -> None:
+    cached = fetch(str(SAMPLE_FEED), NOW)
+    assert cached is not None
+
+    assert fetch(str(SAMPLE_FEED), NOW, replace(cached, etag='"v1"')) is not None

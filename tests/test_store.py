@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from contextlib import closing
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -103,3 +104,12 @@ def test_broken_json_is_treated_as_missing(tmp_path: Path) -> None:
     connection.close()
 
     assert load(db, FEED.source) is None
+
+
+def test_save_and_load_validators(tmp_path: Path) -> None:
+    db = tmp_path / "cache.sqlite3"
+    feed = replace(FEED, etag='"v1"', last_modified="Sun, 03 Apr 2016 12:00:00 GMT")
+
+    save(db, feed)
+
+    assert load(db, FEED.source) == feed

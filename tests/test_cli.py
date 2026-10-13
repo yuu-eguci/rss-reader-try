@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from conftest import FIXTURES, SAMPLE_FEED
+from conftest import FIXTURES, SAMPLE_FEED, FeedServer
 
 from rss_reader_try import cli
 from rss_reader_try.cli import is_fresh, run
@@ -219,3 +219,23 @@ def test_repeated_feed_is_read_once(workdir: Path, capsys: pytest.CaptureFixture
         'fetched: 1 article from "Atom Feed" -> html/Atom-Feed.html\n'
         "index: 2 pages -> html/index.html\n"
     )
+
+
+def test_not_modified_reuses_cache(
+    workdir: Path, feed_server: FeedServer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    url = feed_server.url("/feed")
+    feed_server.routes["/feed"] = (200, {"ETag": '"v1"'}, SAMPLE_FEED.read_bytes())
+    run([url])
+    feed_server.routes["/feed"] = (304, {}, b"")
+    capsys.readouterr()
+
+    assert run(["--max-age", "0", url]) == 0
+    assert run([url]) == 0
+
+    out = capsys.readouterr().out.splitlines()
+    assert (
+        out[0] == 'fetched: 3 articles from "Sample Feed" (not modified) -> html/Sample-Feed.html'
+    )
+    assert out[1].startswith('cache: 3 articles from "Sample Feed"')
+    assert len(feed_server.requests) == 2

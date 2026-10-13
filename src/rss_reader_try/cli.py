@@ -4,6 +4,7 @@ import argparse
 import sqlite3
 import sys
 import webbrowser
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -57,20 +58,24 @@ def is_fresh(fetched_at: datetime, now: datetime, max_age: timedelta) -> bool:
     return now - fetched_at < max_age
 
 
-def _get_feed(args: argparse.Namespace, source: str, now: datetime) -> tuple[Feed, bool]:
-    """Return the feed and whether it came from the cache."""
+def _get_feed(args: argparse.Namespace, source: str, now: datetime) -> tuple[Feed, str]:
+    """Return the feed and where it came from: "cache", "fetched" or "not modified"."""
     cached = store.load(args.db, source)
     if cached is not None and is_fresh(cached.fetched_at, now, args.max_age):
-        return cached, True
+        return cached, "cache"
     try:
-        feed = fetch(source, now)
+        feed = fetch(source, now, cached)
     except FeedError as error:
         if cached is None:
             raise
         print(f"warning: {error}; using the cached copy", file=sys.stderr)
-        return cached, True
+        return cached, "cache"
+    if feed is None:  # the server says `cached` is still up to date
+        feed, origin = replace(cached, fetched_at=now), "not modified"
+    else:
+        origin = "fetched"
     store.save(args.db, feed)
-    return feed, False
+    return feed, origin
 
 
 def _write(path: Path, html: str) -> Path:
@@ -87,7 +92,7 @@ def run(argv: list[str] | None = None) -> int:
     sources = list(dict.fromkeys(args.feeds))
     for source in sources:
         try:
-            feed, from_cache = _get_feed(args, source, now)
+            feed, origin = _get_feed(args, source, now)
             name = output_filename(feed.title, {INDEX, *(name for _, name in pages)})
             path = _write(args.out / name, render_html(feed))
         except sqlite3.Error as error:
@@ -100,8 +105,10 @@ def run(argv: list[str] | None = None) -> int:
             continue
         pages.append((feed, name))
         summary = f'{plural(len(feed.articles), "article")} from "{feed.title}"'
-        if from_cache:
+        if origin == "cache":
             print(f"cache: {summary} (fetched {format_time(feed.fetched_at)}) -> {path}")
+        elif origin == "not modified":
+            print(f"fetched: {summary} (not modified) -> {path}")
         else:
             print(f"fetched: {summary} -> {path}")
 

@@ -50,6 +50,8 @@ def load(db: Path, source: str) -> Feed | None:
             site_url=data["siteUrl"],
             fetched_at=datetime.fromisoformat(data["fetchedAt"]),
             articles=tuple(Article(**article) for article in data["articles"]),
+            etag=data.get("etag"),
+            last_modified=data.get("lastModified"),
         )
     except ValueError, KeyError, TypeError:
         # Rows written by the original version (or broken ones) are simply fetched again.
@@ -65,6 +67,8 @@ def save(db: Path, feed: Feed) -> None:
         "siteUrl": feed.site_url,
         "fetchedAt": feed.fetched_at.isoformat(),
         "articles": [{"title": a.title, "url": a.url, "date": a.date} for a in feed.articles],
+        "etag": feed.etag,
+        "lastModified": feed.last_modified,
     }
     with closing(_connect(db)) as connection, connection:
         connection.execute("DELETE FROM rss_data WHERE rssUrl = ?", (feed.source,))
