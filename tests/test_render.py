@@ -105,3 +105,32 @@ def test_render_index() -> None:
         " -- 1 article (fetched 2026/10/12 01:02 UTC)</li>"
     ) in html
     assert "This index was made at 2026/10/13 07:15 UTC" in html
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "javascript:alert(1)",
+        "JavaScript:alert(1)",
+        " javascript:alert(1)",
+        "\x01javascript:alert(1)",
+        "java\tscript:alert(1)",
+        "java\nscript:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "vbscript:msgbox(1)",
+        "//evil.example/",
+        "/relative/path",
+    ],
+)
+def test_only_http_links_are_linked(url: str) -> None:
+    feed = Feed(
+        source="x",
+        title="t",
+        site_url=url,
+        fetched_at=NOW,
+        articles=(Article(title="a", url=url, date=None),),
+    )
+
+    html = render_html(feed)
+
+    assert "<a " not in html
