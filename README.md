@@ -24,8 +24,11 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try exampl
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try examples/sample-feed.xml
 # cache: 3 articles from "Sample Feed" (fetched 2026/10/13 07:15 UTC) -> html/Sample-Feed.html
 
-# 本物のフィードも読める
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try https://qiita.com/mpyw/feed.atom
+# 本物のフィードも読める。いくつも渡すと、まとめページ html/index.html も作る
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try examples/sample-feed.xml https://qiita.com/mpyw/feed.atom
+# cache: 3 articles from "Sample Feed" (fetched 2026/10/13 07:15 UTC) -> html/Sample-Feed.html
+# fetched: ... articles from "mpywの記事 - Qiita" -> html/mpywの記事-Qiita.html
+# index: 2 pages -> html/index.html
 ```
 
 `html/Sample-Feed.html` をブラウザで開くと、こんな感じの記事一覧が見える。
@@ -35,22 +38,24 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try https:
 ## 使い方
 
 ```
-rss-reader-try [-h] [--db DB] [--out OUT] [--max-age HOURS] [--open] FEED
+rss-reader-try [-h] [--db DB] [--out OUT] [--max-age HOURS] [--open] FEED [FEED ...]
 ```
 
 | 引数 | 既定値 | 説明 |
 | --- | --- | --- |
-| `FEED` | (必須) | フィードの URL (`http://` / `https://`) かローカルファイルのパス |
+| `FEED` | (必須) | フィードの URL (`http://` / `https://`) かローカルファイルのパス。いくつでも (同じものは 1 回だけ読む) |
 | `--db` | `my_rss.sqlite3` | キャッシュ用 SQLite ファイル。なければ作る |
 | `--out` | `html` | HTML の出力先ディレクトリ。なければ作る |
 | `--max-age` | `6` | キャッシュの有効期間 (時間)。`0` なら毎回取りに行く |
-| `--open` | なし | 書き出した HTML をブラウザで開く (Docker の外で動かすとき用) |
+| `--open` | なし | 書き出した HTML (フィードが 2 つ以上なら `index.html`) をブラウザで開く (Docker の外で動かすとき用) |
 
-- 成功すると `fetched:` (取りに行った) か `cache:` (キャッシュから作った) で始まる 1 行を出して終了コード 0。
-- フィードが読めない (ファイルがない、HTTP エラー、フィードじゃない、など) ときは `error:` で始まるメッセージを標準エラーに出して終了コード 1。
+- フィードごとに `fetched:` (取りに行った) か `cache:` (キャッシュから作った) で始まる 1 行を出す。
+- フィードが読めない (ファイルがない、HTTP エラー、フィードじゃない、など) ときは `error:` で始まるメッセージを標準エラーに出す。ほかのフィードはそのまま続ける。
+- フィードを 2 つ以上渡すと、書き出したページへのリンク集 `index.html` も作って `index:` の行を出す。
+- 終了コードは、全部うまくいけば 0、読めないフィードが 1 つでもあれば 1。
 - 取りに行って失敗しても、古いキャッシュがあればそれで HTML を作る。このときは `warning:` を標準エラーに出して `cache:` の行を出す (終了コード 0)。
 - 引数がおかしい (`--max-age -1` など) ときは使い方を出して終了コード 2。
-- 出力ファイル名はフィードのタイトルから作る (記号は `-` に置き換え)。
+- 出力ファイル名はフィードのタイトルから作る (記号は `-` に置き換え)。1 回の実行でかぶったら `-2` などを付ける。
 
 Docker を使わないなら [uv](https://docs.astral.sh/uv/) で。
 

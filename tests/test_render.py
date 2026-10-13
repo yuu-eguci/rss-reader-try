@@ -1,11 +1,10 @@
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 from conftest import FIXTURES
 
 from rss_reader_try.feed import Article, Feed, fetch
-from rss_reader_try.render import format_time, output_filename, render_html, write_html
+from rss_reader_try.render import format_time, output_filename, render_html, render_index
 
 NOW = datetime(2026, 10, 13, 7, 15, tzinfo=UTC)
 FEED = Feed(
@@ -73,18 +72,36 @@ def test_output_filename(title: str, expected: str) -> None:
     assert output_filename(title) == expected
 
 
-def test_write_html_creates_directory(tmp_path: Path) -> None:
-    out = tmp_path / "nested" / "html"
+@pytest.mark.parametrize(
+    ("title", "taken", "expected"),
+    [
+        ("Sample Feed", {"Other.html"}, "Sample-Feed.html"),
+        ("Sample Feed", {"sample-feed.html"}, "Sample-Feed-2.html"),
+        ("Sample Feed", {"Sample-Feed.html", "Sample-Feed-2.html"}, "Sample-Feed-3.html"),
+        ("index", {"index.html"}, "index-2.html"),
+    ],
+)
+def test_output_filename_avoids_taken_names(title: str, taken: set[str], expected: str) -> None:
+    assert output_filename(title, taken) == expected
 
-    path = write_html(FEED, out)
 
-    assert path == out / "Example.html"
-    assert path.read_text(encoding="utf-8") == render_html(FEED)
+def test_render_index() -> None:
+    other = Feed(
+        source="other.xml",
+        title="mpywの記事 <Qiita>",
+        site_url="",
+        fetched_at=datetime(2026, 10, 12, 1, 2, tzinfo=UTC),
+        articles=(FEED.articles[0],),
+    )
 
+    html = render_index([(FEED, "Example.html"), (other, "mpywの記事-Qiita.html")], NOW)
 
-def test_write_html_stays_inside_out_dir(tmp_path: Path) -> None:
-    feed = fetch(str(FIXTURES / "malicious.xml"), NOW)
-
-    path = write_html(feed, tmp_path)
-
-    assert path.parent == tmp_path
+    assert "default-src 'none'" in html
+    assert (
+        '<li><a href="Example.html">Example</a> -- 2 articles (fetched 2026/10/13 07:15 UTC)</li>'
+    ) in html
+    assert (
+        '<li><a href="mpyw%E3%81%AE%E8%A8%98%E4%BA%8B-Qiita.html">mpywの記事 &lt;Qiita&gt;</a>'
+        " -- 1 article (fetched 2026/10/12 01:02 UTC)</li>"
+    ) in html
+    assert "This index was made at 2026/10/13 07:15 UTC" in html

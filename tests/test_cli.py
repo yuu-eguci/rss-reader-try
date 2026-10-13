@@ -13,6 +13,7 @@ from rss_reader_try.cli import is_fresh, run
 def workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.chdir(tmp_path)
     shutil.copy(SAMPLE_FEED, tmp_path / "feed.xml")
+    shutil.copy(FIXTURES / "atom.xml", tmp_path / "atom.xml")
     return tmp_path
 
 
@@ -26,6 +27,7 @@ def test_first_run_fetches_and_writes_html(
     assert err == ""
     assert "はじめての RSS リーダ" in (workdir / "html" / "Sample-Feed.html").read_text()
     assert (workdir / "my_rss.sqlite3").exists()
+    assert not (workdir / "html" / "index.html").exists()
 
 
 def test_second_run_uses_cache(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -130,8 +132,6 @@ def test_corrupt_database_exits_with_1(workdir: Path, capsys: pytest.CaptureFixt
 
 
 def test_single_article_is_singular(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    shutil.copy(FIXTURES / "atom.xml", workdir / "atom.xml")
-
     assert run(["atom.xml"]) == 0
 
     assert capsys.readouterr().out == 'fetched: 1 article from "Atom Feed" -> html/Atom-Feed.html\n'
@@ -150,3 +150,72 @@ def test_failed_refresh_falls_back_to_stale_cache(
     assert out.startswith('cache: 3 articles from "Sample Feed" (fetched ')
     assert err.startswith("warning: cannot read feed.xml: ")
     assert err.endswith("; using the cached copy\n")
+
+
+def test_multiple_feeds_write_an_index(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert run(["feed.xml", "atom.xml"]) == 0
+
+    assert capsys.readouterr().out == (
+        'fetched: 3 articles from "Sample Feed" -> html/Sample-Feed.html\n'
+        'fetched: 1 article from "Atom Feed" -> html/Atom-Feed.html\n'
+        "index: 2 pages -> html/index.html\n"
+    )
+    index = (workdir / "html" / "index.html").read_text()
+    assert '<a href="Sample-Feed.html">Sample Feed</a>' in index
+    assert '<a href="Atom-Feed.html">Atom Feed</a>' in index
+
+
+def test_failing_feed_does_not_stop_the_others(
+    workdir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(["feed.xml", "missing.xml", "atom.xml"]) == 1
+
+    out, err = capsys.readouterr()
+    assert out.splitlines()[-1] == "index: 2 pages -> html/index.html"
+    assert err.startswith("error: cannot read missing.xml: ")
+
+
+def test_all_feeds_failing_writes_no_index(
+    workdir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(["missing.xml", "nope.xml"]) == 1
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.count("error: ") == 2
+    assert not (workdir / "html" / "index.html").exists()
+
+
+def test_same_title_gets_another_file(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    shutil.copy(SAMPLE_FEED, workdir / "copy.xml")
+
+    assert run(["feed.xml", "copy.xml"]) == 0
+
+    out = capsys.readouterr().out
+    assert "-> html/Sample-Feed.html\n" in out
+    assert "-> html/Sample-Feed-2.html\n" in out
+
+
+def test_open_multiple_feeds_opens_index(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr(cli.webbrowser, "open", lambda url: opened.append(url) or True)
+
+    assert run(["--open", "feed.xml", "atom.xml"]) == 0
+
+    assert opened == [(workdir / "html" / "index.html").resolve().as_uri()]
+
+
+def test_index_with_one_page_is_singular(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert run(["feed.xml", "missing.xml"]) == 1
+
+    assert capsys.readouterr().out.endswith("index: 1 page -> html/index.html\n")
+
+
+def test_repeated_feed_is_read_once(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert run(["feed.xml", "atom.xml", "feed.xml"]) == 0
+
+    assert capsys.readouterr().out == (
+        'fetched: 3 articles from "Sample Feed" -> html/Sample-Feed.html\n'
+        'fetched: 1 article from "Atom Feed" -> html/Atom-Feed.html\n'
+        "index: 2 pages -> html/index.html\n"
+    )
