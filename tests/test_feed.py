@@ -209,3 +209,44 @@ def test_local_file_ignores_validators() -> None:
     assert cached is not None
 
     assert fetch(str(SAMPLE_FEED), NOW, replace(cached, etag='"v1"')) is not None
+
+
+def test_charset_from_http_header(feed_server: FeedServer) -> None:
+    body = (
+        '<rss version="2.0"><channel><title>東方スレ観測所</title>'
+        "<item><title>こいしにマシンガン</title></item></channel></rss>"
+    ).encode("shift_jis")
+    content_type = {"Content-Type": "application/rss+xml; charset=Shift_JIS"}
+    feed_server.routes["/sjis"] = (200, content_type, body)
+
+    feed = fetch(feed_server.url("/sjis"), NOW)
+
+    assert feed is not None
+    assert feed.title == "東方スレ観測所"
+    assert feed.articles[0].title == "こいしにマシンガン"
+
+
+def test_charset_from_xml_declaration(tmp_path: Path) -> None:
+    path = tmp_path / "eucjp.xml"
+    path.write_bytes(
+        '<?xml version="1.0" encoding="EUC-JP"?>\n<rss version="2.0"><channel>'
+        "<title>日本語のフィード</title></channel></rss>".encode("euc_jp")
+    )
+
+    feed = fetch(str(path), NOW)
+
+    assert feed is not None
+    assert feed.title == "日本語のフィード"
+
+
+@pytest.mark.parametrize("content_type", ["text/plain", "text/html; charset=utf-8"])
+def test_feed_with_wrong_content_type_still_parses(
+    feed_server: FeedServer, content_type: str
+) -> None:
+    feed_server.routes["/feed"] = (200, {"Content-Type": content_type}, SAMPLE_FEED.read_bytes())
+
+    feed = fetch(feed_server.url("/feed"), NOW)
+
+    assert feed is not None
+    assert feed.title == "Sample Feed"
+    assert len(feed.articles) == 3

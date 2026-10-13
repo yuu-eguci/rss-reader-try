@@ -48,6 +48,7 @@ class Download:
     data: bytes | None  # None: not modified since the validators that were sent
     etag: str | None = None
     last_modified: str | None = None
+    content_type: str | None = None  # may carry the charset
 
 
 class _HttpOnlyRedirectHandler(HTTPRedirectHandler):
@@ -92,7 +93,10 @@ def read_source(
                 if len(data) <= max_bytes and response.length:
                     raise HTTPException("connection closed before the end of the response")
                 validators = Download(
-                    None, response.headers.get("ETag"), response.headers.get("Last-Modified")
+                    None,
+                    response.headers.get("ETag"),
+                    response.headers.get("Last-Modified"),
+                    response.headers.get("Content-Type"),
                 )
         elif not scheme:
             with Path(source).open("rb") as file:
@@ -133,7 +137,11 @@ def fetch(source: str, now: datetime, cached: Feed | None = None) -> Feed | None
     )
     if download.data is None:
         return None
-    headers = {"content-location": source} if urlsplit(source).scheme in HTTP_SCHEMES else {}
+    headers = {}
+    if urlsplit(source).scheme in HTTP_SCHEMES:
+        headers["content-location"] = source
+    if download.content_type:
+        headers["content-type"] = download.content_type
     parsed = feedparser.parse(download.data, response_headers=headers)
     if not parsed.get("version") and not parsed.entries:
         raise FeedError(f"not a feed: {source}")
