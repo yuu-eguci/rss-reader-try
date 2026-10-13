@@ -9,9 +9,11 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
 from pathlib import Path
+from xml.etree import ElementTree
 
 from rss_reader_try import store
 from rss_reader_try.feed import Feed, FeedError, NotModified, fetch
+from rss_reader_try.opml import read_opml
 from rss_reader_try.render import (
     format_time,
     output_filename,
@@ -42,7 +44,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Read RSS / Atom feeds, cache them in SQLite and write the articles as HTML.",
     )
     parser.add_argument(
-        "feeds", nargs="+", metavar="FEED", help="feed URL (http/https) or local file path"
+        "feeds", nargs="*", metavar="FEED", help="feed URL (http/https) or local file path"
+    )
+    parser.add_argument(
+        "--opml",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="also read the feeds listed in this OPML file (repeatable)",
     )
     parser.add_argument("--db", type=Path, default=Path("my_rss.sqlite3"), help="cache database")
     parser.add_argument("--out", type=Path, default=Path("html"), help="output directory")
@@ -93,12 +103,33 @@ def _write(path: Path, html: str) -> Path:
     return path
 
 
+def _report(feed: Feed, origin: str, path: Path) -> None:
+    summary = f'{plural(len(feed.articles), "article")} from "{feed.title}"'
+    if origin == "cache":
+        _say(f"cache: {summary} (fetched {format_time(feed.fetched_at)}) -> {path}")
+    elif origin == "not modified":
+        _say(f"fetched: {summary} (not modified) -> {path}")
+    else:
+        _say(f"fetched: {summary} -> {path}")
+
+
 def run(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    sources = list(args.feeds)
+    for opml in args.opml:
+        try:
+            sources += read_opml(opml)
+        except (OSError, ElementTree.ParseError, ValueError) as error:
+            _say(f"error: {opml}: {error}", error=True)
+            return 1
+    sources = list(dict.fromkeys(sources))
+    if not sources:
+        parser.error("no feeds given (pass FEED or --opml)")
+
     now = datetime.now(UTC)
     pages: list[tuple[Feed, str]] = []
     failed = False
-    sources = list(dict.fromkeys(args.feeds))
     for source in sources:
         try:
             feed, origin = _get_feed(args, source, now)
@@ -113,13 +144,7 @@ def run(argv: list[str] | None = None) -> int:
             failed = True
             continue
         pages.append((feed, name))
-        summary = f'{plural(len(feed.articles), "article")} from "{feed.title}"'
-        if origin == "cache":
-            _say(f"cache: {summary} (fetched {format_time(feed.fetched_at)}) -> {path}")
-        elif origin == "not modified":
-            _say(f"fetched: {summary} (not modified) -> {path}")
-        else:
-            _say(f"fetched: {summary} -> {path}")
+        _report(feed, origin, path)
 
     if not pages:
         return 1

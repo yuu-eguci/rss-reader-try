@@ -8,6 +8,7 @@ import pytest
 from conftest import FIXTURES, SAMPLE_FEED, FeedServer
 
 from rss_reader_try.cli import is_fresh, run
+from rss_reader_try.opml import read_opml
 
 
 def fake_browser(monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -279,3 +280,77 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
 
     assert excinfo.value.code == 0
     assert capsys.readouterr().out == f"rss-reader-try {version('rss-reader-try')}\n"
+
+
+def write_opml(path: Path, *urls: str) -> None:
+    outlines = "".join(f'<outline type="rss" text="t" xmlUrl="{url}"/>' for url in urls)
+    path.write_text(
+        '<?xml version="1.0"?><opml version="2.0"><head><title>subs</title></head><body>'
+        f'<outline text="folder">{outlines}</outline><outline text="no feed here"/>'
+        "</body></opml>"
+    )
+
+
+def test_opml(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_opml(workdir / "subs.opml", "atom.xml", "feed.xml")
+
+    assert run(["feed.xml", "--opml", "subs.opml"]) == 0
+
+    assert capsys.readouterr().out == (
+        'fetched: 3 articles from "Sample Feed" -> html/Sample-Feed.html\n'
+        'fetched: 1 article from "Atom Feed" -> html/Atom-Feed.html\n'
+        "index: 2 pages -> html/index.html\n"
+    )
+
+
+def test_several_opml_files(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_opml(workdir / "a.opml", "feed.xml")
+    write_opml(workdir / "b.opml", "atom.xml")
+
+    assert run(["--opml", "a.opml", "--opml", "b.opml"]) == 0
+
+    assert capsys.readouterr().out.endswith("index: 2 pages -> html/index.html\n")
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (None, "error: missing.opml: "),
+        ("<opml><body>", "error: broken.opml: "),
+    ],
+)
+def test_unreadable_opml(
+    workdir: Path, capsys: pytest.CaptureFixture[str], content: str | None, message: str
+) -> None:
+    name = "missing.opml" if content is None else "broken.opml"
+    if content is not None:
+        (workdir / name).write_text(content)
+
+    assert run(["feed.xml", "--opml", name]) == 1
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.startswith(message)
+    assert not (workdir / "html").exists()
+
+
+@pytest.mark.parametrize("argv", [[], ["--opml", "empty.opml"]])
+def test_no_feeds_is_a_usage_error(
+    workdir: Path, capsys: pytest.CaptureFixture[str], argv: list[str]
+) -> None:
+    write_opml(workdir / "empty.opml")
+
+    with pytest.raises(SystemExit) as excinfo:
+        run(argv)
+
+    assert excinfo.value.code == 2
+    assert "no feeds given" in capsys.readouterr().err
+
+
+def test_sample_opml(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(SAMPLE_FEED.parent.parent)
+
+    assert read_opml(Path("examples/subscriptions.opml")) == [
+        "examples/sample-feed.xml",
+        "https://qiita.com/mpyw/feed.atom",
+    ]

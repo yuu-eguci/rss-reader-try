@@ -30,6 +30,9 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try exampl
 # cache: 3 articles from "Sample Feed" (fetched 2026/10/13 07:15 UTC) -> html/Sample-Feed.html
 # fetched: ... articles from "mpywの記事 - Qiita" -> html/mpywの記事-Qiita.html
 # index: 2 pages -> html/index.html
+
+# ほかの RSS リーダの購読リスト (OPML) もそのまま読める
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try --opml examples/subscriptions.opml
 ```
 
 `html/Sample-Feed.html` をブラウザで開くと、こんな感じの記事一覧が見える。
@@ -39,25 +42,28 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try exampl
 ## 使い方
 
 ```
-rss-reader-try [-h] [--db DB] [--out OUT] [--max-age HOURS] [--open] [--version] FEED [FEED ...]
+rss-reader-try [-h] [--opml FILE] [--db DB] [--out OUT] [--max-age HOURS] [--open] [--version] [FEED ...]
 ```
 
 | 引数 | 既定値 | 説明 |
 | --- | --- | --- |
-| `FEED` | (必須) | フィードの URL (`http://` / `https://`) かローカルファイルのパス。フィードを `<link rel="alternate">` で案内しているページの URL でもいい。いくつでも (同じものは 1 回だけ読む) |
+| `FEED` | なし | フィードの URL (`http://` / `https://`) かローカルファイルのパス。フィードを `<link rel="alternate">` で案内しているページの URL でもいい。いくつでも (同じものは 1 回だけ読む) |
+| `--opml` | なし | ほかの RSS リーダから書き出した購読リスト (OPML ファイル)。中のフィードを全部読む。何回でも指定できる |
 | `--db` | `my_rss.sqlite3` | キャッシュ用 SQLite ファイル。なければ作る |
 | `--out` | `html` | HTML の出力先ディレクトリ。なければ作る |
 | `--max-age` | `6` | キャッシュの有効期間 (時間)。`0` なら毎回取りに行く |
 | `--open` | なし | 書き出した HTML (フィードが 2 つ以上なら `index.html`) をブラウザで開く (Docker の外で動かすとき用) |
 | `--version` | なし | バージョンを出して終わる |
 
+- `FEED` か `--opml` で、フィードを 1 つ以上渡す。
 - フィードごとに `fetched:` (取りに行った) か `cache:` (キャッシュから作った) で始まる 1 行を出す。
 - フィードが読めない (ファイルがない、HTTP エラー、フィードじゃない、など) ときは `error:` で始まるメッセージを標準エラーに出す。ほかのフィードはそのまま続ける。
 - フィードを 2 つ以上渡すと、書き出したページへのリンク集 `index.html` も作って `index:` の行を出す。
 - 終了コードは、全部うまくいけば 0、読めないフィードが 1 つでもあれば 1。
 - 取りに行くときは前回の `ETag` / `Last-Modified` を送る。サーバが「変わってない」(304) と返したらキャッシュの記事をそのまま使って `fetched: ... (not modified) -> ...` を出す。
 - 取りに行って失敗しても、古いキャッシュがあればそれで HTML を作る。このときは `warning:` を標準エラーに出して `cache:` の行を出す (終了コード 0)。
-- 引数がおかしい (`--max-age -1` など) ときは使い方を出して終了コード 2。
+- OPML ファイルが読めないときは `error:` を出して、何も読まずに終了コード 1。
+- 引数がおかしい (`--max-age -1` など、フィードが 1 つもない) ときは使い方を出して終了コード 2。
 - 出力ファイル名はフィードのタイトルから作る (記号は `-` に置き換え)。1 回の実行でかぶったら `-2` などを付ける。
 
 Docker を使わないなら [uv](https://docs.astral.sh/uv/) で。

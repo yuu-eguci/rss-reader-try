@@ -75,6 +75,11 @@ check "feed found from an HTML page" 0 '^fetched: 3 articles from "Sample Feed"'
 check "several feeds and an index" 1 '^index: 2 pages -> html/index.html$' \
     "$URL/sample-feed.xml" "$URL/missing.xml" "$URL/atom.xml"
 check_file "index links to the pages" html/index.html 'href="Atom-Feed.html"' '<script'
+cat >"$WORK/out/subs.opml" <<OPML
+<?xml version="1.0"?><opml version="2.0"><body><outline text="folder">
+<outline xmlUrl="$URL/atom.xml"/><outline xmlUrl="$URL/empty.xml"/></outline></body></opml>
+OPML
+check "OPML subscription list" 0 '^index: 2 pages -> html/index.html$' --opml subs.opml
 check "HTTP error" 1 '^error: cannot read .*/missing.xml: HTTP Error 404' "$URL/missing.xml"
 check "not a feed" 1 '^error: not a feed: ' "$URL/not-a-feed.html"
 check "hostile feed" 0 '^fetched: 2 articles from "\.\./\.\./etc/passwd <script>' "$URL/malicious.xml"

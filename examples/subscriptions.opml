@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<opml version="2.0">
+  <head>
+    <title>rss-reader-try のサンプル購読リスト</title>
+  </head>
+  <body>
+    <outline text="サンプル">
+      <outline type="rss" text="Sample Feed" xmlUrl="examples/sample-feed.xml"/>
+    </outline>
+    <outline type="rss" text="mpywの記事 - Qiita" xmlUrl="https://qiita.com/mpyw/feed.atom"/>
+  </body>
+</opml>
