@@ -16,6 +16,8 @@ class FeedServer:
     def __init__(self) -> None:
         self.routes: dict[str, tuple[int, dict[str, str], bytes]] = {}
         self.delay = 0.0
+        # If set, every request waits until this many requests are being handled at once.
+        self.barrier: threading.Barrier | None = None
         self.requests: list[dict[str, str]] = []
         server = self
 
@@ -24,6 +26,11 @@ class FeedServer:
                 server.requests.append(dict(self.headers.items()))
                 time.sleep(server.delay)
                 status, headers, body = server.routes.get(self.path, (404, {}, b"not found"))
+                if server.barrier is not None:
+                    try:
+                        server.barrier.wait()
+                    except threading.BrokenBarrierError:
+                        status, headers, body = 503, {}, b"requests were not concurrent"
                 self.send_response(status)
                 for name, value in headers.items():
                     self.send_header(name, value)

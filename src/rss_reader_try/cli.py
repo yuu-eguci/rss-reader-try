@@ -5,6 +5,7 @@ import re
 import sqlite3
 import sys
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
@@ -25,6 +26,7 @@ from rss_reader_try.render import (
 
 PROG = "rss-reader-try"
 INDEX = "index.html"
+MAX_PARALLEL_FETCHES = 4
 type Origin = Literal["cache", "fetched", "updated", "not modified"]
 # C0/C1 controls and bidi overrides: feed text must not drive the terminal.
 UNSAFE_FOR_TERMINAL = re.compile("[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
@@ -76,25 +78,29 @@ def is_fresh(fetched_at: datetime, now: datetime, max_age: timedelta) -> bool:
     return now - fetched_at < max_age
 
 
-def _get_feed(args: argparse.Namespace, source: str, now: datetime) -> tuple[Feed, Origin]:
-    """Return the feed and where it came from."""
-    cached = store.load(args.db, source)
-    origin: Origin
+def _fetch(source: str, now: datetime, cached: Feed | None) -> Feed | FeedError | NotModified:
+    """Run in a worker thread: fetch, returning the failure instead of raising it."""
+    try:
+        return fetch(source, now, cached)
+    except (FeedError, NotModified) as error:
+        return error
+
+
+def _resolve(
+    cached: Feed | None, fetched: Feed | FeedError | NotModified, now: datetime
+) -> tuple[Feed, Origin]:
+    """Combine the stale (or missing) cache and the fetch result into the feed to show."""
+    if isinstance(fetched, Feed):
+        if cached is None:
+            return fetched, "fetched"
+        return mark_new(fetched, cached), "updated"
     if cached is None:
-        feed, origin = fetch(source, now), "fetched"
-    elif is_fresh(cached.fetched_at, now, args.max_age):
-        return cached, "cache"
-    else:
-        try:
-            feed, origin = mark_new(fetch(source, now, cached), cached), "updated"
-        except NotModified:
-            articles = tuple(replace(article, new=False) for article in cached.articles)
-            feed, origin = replace(cached, fetched_at=now, articles=articles), "not modified"
-        except FeedError as error:
-            _say(f"warning: {error}; using the cached copy", error=True)
-            return cached, "cache"
-    store.save(args.db, feed)
-    return feed, origin
+        raise fetched  # a FeedError: NotModified needs the validators of a cached copy
+    if isinstance(fetched, NotModified):
+        articles = tuple(replace(article, new=False) for article in cached.articles)
+        return replace(cached, fetched_at=now, articles=articles), "not modified"
+    _say(f"warning: {fetched}; using the cached copy", error=True)
+    return cached, "cache"
 
 
 def _say(message: str, *, error: bool = False) -> None:
@@ -120,6 +126,53 @@ def _report(feed: Feed, origin: Origin, path: Path) -> None:
         _say(f"fetched: {summary} -> {path}")
 
 
+def _read_feeds(
+    args: argparse.Namespace, sources: list[str], now: datetime
+) -> tuple[list[tuple[Feed, str]], bool]:
+    """Write a page for each feed; return the (feed, file name) pages and whether any failed."""
+    try:
+        caches = {source: store.load(args.db, source) for source in sources}
+    except sqlite3.Error as error:
+        _say(f"error: {args.db}: {error}", error=True)
+        return [], True
+    fresh = {
+        source: cached
+        for source, cached in caches.items()
+        if cached is not None and is_fresh(cached.fetched_at, now, args.max_age)
+    }
+    stale = [source for source in sources if source not in fresh]
+    with ThreadPoolExecutor(MAX_PARALLEL_FETCHES) as pool:
+        results = dict(
+            zip(stale, pool.map(lambda s: _fetch(s, now, caches[s]), stale), strict=True)
+        )
+
+    pages: list[tuple[Feed, str]] = []
+    failed = False
+    for source in sources:
+        origin: Origin
+        try:
+            if source in fresh:
+                feed, origin = fresh[source], "cache"
+            else:
+                feed, origin = _resolve(caches[source], results[source], now)
+                if origin != "cache":
+                    store.save(args.db, feed)
+            name = output_filename(feed.title, {INDEX, *(name for _, name in pages)})
+            path = _write(args.out / name, render_html(feed))
+        except sqlite3.Error as error:
+            _say(f"error: {args.db}: {error}", error=True)
+            failed = True
+            continue
+        except (FeedError, OSError) as error:
+            _say(f"error: {error}", error=True)
+            failed = True
+            continue
+        pages.append((feed, name))
+        _report(feed, origin, path)
+
+    return pages, failed
+
+
 def run(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -135,24 +188,7 @@ def run(argv: list[str] | None = None) -> int:
         parser.error("no feeds given (pass FEED or --opml)")
 
     now = datetime.now(UTC)
-    pages: list[tuple[Feed, str]] = []
-    failed = False
-    for source in sources:
-        try:
-            feed, origin = _get_feed(args, source, now)
-            name = output_filename(feed.title, {INDEX, *(name for _, name in pages)})
-            path = _write(args.out / name, render_html(feed))
-        except sqlite3.Error as error:
-            _say(f"error: {args.db}: {error}", error=True)
-            failed = True
-            continue
-        except (FeedError, OSError) as error:
-            _say(f"error: {error}", error=True)
-            failed = True
-            continue
-        pages.append((feed, name))
-        _report(feed, origin, path)
-
+    pages, failed = _read_feeds(args, sources, now)
     if not pages:
         return 1
     target = args.out / pages[0][1]

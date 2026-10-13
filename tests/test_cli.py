@@ -1,6 +1,8 @@
 import runpy
 import shutil
+import sqlite3
 import sys
+import threading
 import webbrowser
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
@@ -9,6 +11,7 @@ from pathlib import Path
 import pytest
 from conftest import FIXTURES, SAMPLE_FEED, FeedServer
 
+from rss_reader_try import store
 from rss_reader_try.cli import is_fresh, main, run
 from rss_reader_try.opml import read_opml
 
@@ -406,3 +409,35 @@ def test_main_exits_with_run_result(workdir: Path, monkeypatch: pytest.MonkeyPat
         main()
 
     assert excinfo.value.code == 1
+
+
+def test_feeds_are_fetched_in_parallel_but_reported_in_order(
+    workdir: Path, feed_server: FeedServer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name in ("a", "b", "c", "d"):
+        body = SAMPLE_FEED.read_bytes().replace(b"Sample Feed", f"Feed {name}".encode())
+        feed_server.routes[f"/{name}"] = (200, {}, body)
+    feed_server.barrier = threading.Barrier(4, timeout=5)
+
+    assert run([feed_server.url(f"/{name}") for name in ("a", "b", "c", "d")]) == 0
+
+    out = capsys.readouterr().out.splitlines()
+    assert [line.split('"')[1] for line in out[:4]] == ["Feed a", "Feed b", "Feed c", "Feed d"]
+
+
+def test_cache_save_failure_is_reported(
+    workdir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail(_db: Path, _feed: object) -> None:
+        raise sqlite3.OperationalError("attempt to write a readonly database")
+
+    monkeypatch.setattr(store, "save", fail)
+
+    assert run(["feed.xml", "atom.xml"]) == 1
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err == (
+        "error: my_rss.sqlite3: attempt to write a readonly database\n"
+        "error: my_rss.sqlite3: attempt to write a readonly database\n"
+    )
