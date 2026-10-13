@@ -248,3 +248,25 @@ def test_not_modified_reuses_cache(
     )
     assert out[1].startswith('cache: 3 articles from "Sample Feed"')
     assert len(feed_server.requests) == 2
+
+
+RLO = chr(0x202E)  # right-to-left override
+UNSAFE = ["\x1b", "\x07", "\x9b", RLO]
+
+
+def test_terminal_control_characters_are_not_printed(
+    workdir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (workdir / "esc.xml").write_text(
+        f'<rss version="2.0"><channel><title>A\x1b]0;pwned\x07B \x9b31mC {RLO}D</title>'
+        "</channel></rss>",
+        encoding="utf-8",
+    )
+
+    assert run(["esc.xml", "missing\x1b[2J\x9b.xml"]) == 1
+
+    out, err = capsys.readouterr()
+    # feedparser itself maps a C1 control in feed text to its cp1252 character (U+203A).
+    assert out.startswith(f'fetched: 0 articles from "A?]0;pwned?B {chr(0x203A)}31mC ?D" -> html/')
+    assert err.startswith("error: cannot read missing?[2J?.xml: ")
+    assert not any(char in out + err for char in UNSAFE)

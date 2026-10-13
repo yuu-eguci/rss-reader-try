@@ -1,6 +1,7 @@
 """Command line entry point."""
 
 import argparse
+import re
 import sqlite3
 import sys
 import webbrowser
@@ -19,6 +20,8 @@ from rss_reader_try.render import (
 )
 
 INDEX = "index.html"
+# C0/C1 controls and bidi overrides: feed text must not drive the terminal.
+UNSAFE_FOR_TERMINAL = re.compile("[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
 
 
 def _hours(value: str) -> timedelta:
@@ -71,10 +74,14 @@ def _get_feed(args: argparse.Namespace, source: str, now: datetime) -> tuple[Fee
         except NotModified:
             feed, origin = replace(cached, fetched_at=now), "not modified"
         except FeedError as error:
-            print(f"warning: {error}; using the cached copy", file=sys.stderr)
+            _say(f"warning: {error}; using the cached copy", error=True)
             return cached, "cache"
     store.save(args.db, feed)
     return feed, origin
+
+
+def _say(message: str, *, error: bool = False) -> None:
+    print(UNSAFE_FOR_TERMINAL.sub("?", message), file=sys.stderr if error else sys.stdout)
 
 
 def _write(path: Path, html: str) -> Path:
@@ -95,21 +102,21 @@ def run(argv: list[str] | None = None) -> int:
             name = output_filename(feed.title, {INDEX, *(name for _, name in pages)})
             path = _write(args.out / name, render_html(feed))
         except sqlite3.Error as error:
-            print(f"error: {args.db}: {error}", file=sys.stderr)
+            _say(f"error: {args.db}: {error}", error=True)
             failed = True
             continue
         except (FeedError, OSError) as error:
-            print(f"error: {error}", file=sys.stderr)
+            _say(f"error: {error}", error=True)
             failed = True
             continue
         pages.append((feed, name))
         summary = f'{plural(len(feed.articles), "article")} from "{feed.title}"'
         if origin == "cache":
-            print(f"cache: {summary} (fetched {format_time(feed.fetched_at)}) -> {path}")
+            _say(f"cache: {summary} (fetched {format_time(feed.fetched_at)}) -> {path}")
         elif origin == "not modified":
-            print(f"fetched: {summary} (not modified) -> {path}")
+            _say(f"fetched: {summary} (not modified) -> {path}")
         else:
-            print(f"fetched: {summary} -> {path}")
+            _say(f"fetched: {summary} -> {path}")
 
     if not pages:
         return 1
@@ -118,11 +125,11 @@ def run(argv: list[str] | None = None) -> int:
         try:
             target = _write(args.out / INDEX, render_index(pages, now))
         except OSError as error:
-            print(f"error: {error}", file=sys.stderr)
+            _say(f"error: {error}", error=True)
             return 1
-        print(f"index: {plural(len(pages), 'page')} -> {target}")
+        _say(f"index: {plural(len(pages), 'page')} -> {target}")
     if args.open and not webbrowser.open(target.resolve().as_uri()):
-        print("warning: could not open a browser", file=sys.stderr)
+        _say("warning: could not open a browser", error=True)
     return 1 if failed else 0
 
 
