@@ -7,6 +7,7 @@ import sys
 import webbrowser
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from importlib.metadata import version
 from pathlib import Path
 
 from rss_reader_try import store
@@ -19,6 +20,7 @@ from rss_reader_try.render import (
     render_index,
 )
 
+PROG = "rss-reader-try"
 INDEX = "index.html"
 # C0/C1 controls and bidi overrides: feed text must not drive the terminal.
 UNSAFE_FOR_TERMINAL = re.compile("[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
@@ -36,7 +38,7 @@ def _hours(value: str) -> timedelta:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="rss-reader-try",
+        prog=PROG,
         description="Read RSS / Atom feeds, cache them in SQLite and write the articles as HTML.",
     )
     parser.add_argument(
@@ -54,6 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--open", action="store_true", help="open the HTML (the index for 2+ feeds) in a browser"
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {version(PROG)}")
     return parser
 
 

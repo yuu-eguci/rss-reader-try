@@ -7,6 +7,7 @@ from datetime import datetime
 from html.parser import HTMLParser
 from http import HTTPStatus
 from http.client import HTTPException, HTTPMessage
+from importlib.metadata import version
 from pathlib import Path
 from typing import IO, override
 from urllib.error import HTTPError, URLError
@@ -15,7 +16,9 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import feedparser
 
-USER_AGENT = "rss-reader-try/2.0 (+https://github.com/yuu-eguci/rss-reader-try)"
+USER_AGENT = (
+    f"rss-reader-try/{version('rss-reader-try')} (+https://github.com/yuu-eguci/rss-reader-try)"
+)
 TIMEOUT_SECONDS = 30.0
 MAX_BYTES = 10 * 1024 * 1024
 HTTP_SCHEMES = frozenset({"http", "https"})

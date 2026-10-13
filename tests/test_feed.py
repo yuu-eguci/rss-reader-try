@@ -1,6 +1,7 @@
 import socket
 from dataclasses import replace
 from datetime import UTC, datetime
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -99,7 +100,9 @@ def test_fetch_over_http(feed_server: FeedServer) -> None:
 
     assert feed.title == "Sample Feed"
     assert len(feed.articles) == 3
-    assert feed_server.requests[0]["User-Agent"].startswith("rss-reader-try/")
+    assert feed_server.requests[0]["User-Agent"].startswith(
+        f"rss-reader-try/{version('rss-reader-try')} "
+    )
     assert "If-None-Match" not in feed_server.requests[0]
 
 

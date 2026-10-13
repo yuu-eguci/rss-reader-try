@@ -1,6 +1,7 @@
 import shutil
 import webbrowser
 from datetime import UTC, datetime, timedelta
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -270,3 +271,11 @@ def test_terminal_control_characters_are_not_printed(
     assert out.startswith(f'fetched: 0 articles from "A?]0;pwned?B {chr(0x203A)}31mC ?D" -> html/')
     assert err.startswith("error: cannot read missing?[2J?.xml: ")
     assert not any(char in out + err for char in UNSAFE)
+
+
+def test_version(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        run(["--version"])
+
+    assert excinfo.value.code == 0
+    assert capsys.readouterr().out == f"rss-reader-try {version('rss-reader-try')}\n"

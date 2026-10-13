@@ -39,7 +39,7 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try exampl
 ## 使い方
 
 ```
-rss-reader-try [-h] [--db DB] [--out OUT] [--max-age HOURS] [--open] FEED [FEED ...]
+rss-reader-try [-h] [--db DB] [--out OUT] [--max-age HOURS] [--open] [--version] FEED [FEED ...]
 ```
 
 | 引数 | 既定値 | 説明 |
@@ -49,6 +49,7 @@ rss-reader-try [-h] [--db DB] [--out OUT] [--max-age HOURS] [--open] FEED [FEED 
 | `--out` | `html` | HTML の出力先ディレクトリ。なければ作る |
 | `--max-age` | `6` | キャッシュの有効期間 (時間)。`0` なら毎回取りに行く |
 | `--open` | なし | 書き出した HTML (フィードが 2 つ以上なら `index.html`) をブラウザで開く (Docker の外で動かすとき用) |
+| `--version` | なし | バージョンを出して終わる |
 
 - フィードごとに `fetched:` (取りに行った) か `cache:` (キャッシュから作った) で始まる 1 行を出す。
 - フィードが読めない (ファイルがない、HTTP エラー、フィードじゃない、など) ときは `error:` で始まるメッセージを標準エラーに出す。ほかのフィードはそのまま続ける。
