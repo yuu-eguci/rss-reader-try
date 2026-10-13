@@ -8,7 +8,7 @@ Rssリーダを作ってみる。DB接続とか feedparser とか webbrowser と
 - Docker: 対応!
 - Python: 3.15!
 - Linter: Ruff + mypy!
-- Test: pytest!
+- Test: pytest + coverage (100%)!
 - feedparser: 6.0!
 
 ## パッと実行してみたい
@@ -76,7 +76,7 @@ uv run rss-reader-try --open examples/sample-feed.xml
 ## 開発
 
 ```bash
-# lint (Ruff)、型チェック (mypy)、テスト (pytest) を Docker で回す
+# lint (Ruff)、型チェック (mypy)、テスト (pytest、カバレッジ 100% 必須) を Docker で回す
 docker build --target dev -t rss-reader-try:dev .
 docker run --rm rss-reader-try:dev
 

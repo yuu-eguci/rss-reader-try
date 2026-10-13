@@ -1,4 +1,6 @@
+import runpy
 import shutil
+import sys
 import webbrowser
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
@@ -7,7 +9,7 @@ from pathlib import Path
 import pytest
 from conftest import FIXTURES, SAMPLE_FEED, FeedServer
 
-from rss_reader_try.cli import is_fresh, run
+from rss_reader_try.cli import is_fresh, main, run
 from rss_reader_try.opml import read_opml
 
 
@@ -372,3 +374,35 @@ def test_new_articles_are_counted(workdir: Path, capsys: pytest.CaptureFixture[s
     page = (workdir / "html" / "Sample-Feed.html").read_text()
     assert page.count("<strong>NEW</strong>") == 1
     assert '<strong>NEW</strong> <a href="https://example.com/articles/3"' in page
+
+
+def test_unwritable_index_exits_with_1(workdir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (workdir / "html" / "index.html").mkdir(parents=True)
+
+    assert run(["feed.xml", "atom.xml"]) == 1
+
+    out, err = capsys.readouterr()
+    assert out.count("fetched: ") == 2
+    assert err.startswith("error: ")
+    assert "index.html" in err
+
+
+def test_python_m_entry_point(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["rss-reader-try", "--version"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        runpy.run_module("rss_reader_try", run_name="__main__")
+
+    assert excinfo.value.code == 0
+    assert capsys.readouterr().out.startswith("rss-reader-try ")
+
+
+def test_main_exits_with_run_result(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["rss-reader-try", "missing.xml"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    assert excinfo.value.code == 1

@@ -13,6 +13,7 @@ rss-reader-try = "rss_reader_try.cli:main"
 
 [dependency-groups]
 dev = [
+    "coverage>=7.16.2",
     "mypy>=2.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
@@ -43,6 +44,14 @@ mypy_path = "src"
 [[tool.mypy.overrides]]
 module = ["feedparser"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+branch = true
+source = ["rss_reader_try"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
