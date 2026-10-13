@@ -135,3 +135,18 @@ def test_single_article_is_singular(workdir: Path, capsys: pytest.CaptureFixture
     assert run(["atom.xml"]) == 0
 
     assert capsys.readouterr().out == 'fetched: 1 article from "Atom Feed" -> html/Atom-Feed.html\n'
+
+
+def test_failed_refresh_falls_back_to_stale_cache(
+    workdir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run(["feed.xml"])
+    (workdir / "feed.xml").unlink()
+    capsys.readouterr()
+
+    assert run(["--max-age", "0", "feed.xml"]) == 0
+
+    out, err = capsys.readouterr()
+    assert out.startswith('cache: 3 articles from "Sample Feed" (fetched ')
+    assert err.startswith("warning: cannot read feed.xml: ")
+    assert err.endswith("; using the cached copy\n")

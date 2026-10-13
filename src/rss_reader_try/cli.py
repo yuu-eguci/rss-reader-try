@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from rss_reader_try import store
-from rss_reader_try.feed import FeedError, fetch
+from rss_reader_try.feed import Feed, FeedError, fetch
 from rss_reader_try.render import format_time, write_html
 
 
@@ -45,15 +45,26 @@ def is_fresh(fetched_at: datetime, now: datetime, max_age: timedelta) -> bool:
     return now - fetched_at < max_age
 
 
+def _get_feed(args: argparse.Namespace, now: datetime) -> tuple[Feed, bool]:
+    """Return the feed and whether it came from the cache."""
+    cached = store.load(args.db, args.feed)
+    if cached is not None and is_fresh(cached.fetched_at, now, args.max_age):
+        return cached, True
+    try:
+        feed = fetch(args.feed, now)
+    except FeedError as error:
+        if cached is None:
+            raise
+        print(f"warning: {error}; using the cached copy", file=sys.stderr)
+        return cached, True
+    store.save(args.db, feed)
+    return feed, False
+
+
 def run(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    now = datetime.now(UTC)
     try:
-        feed = store.load(args.db, args.feed)
-        from_cache = feed is not None and is_fresh(feed.fetched_at, now, args.max_age)
-        if not from_cache:
-            feed = fetch(args.feed, now)
-            store.save(args.db, feed)
+        feed, from_cache = _get_feed(args, datetime.now(UTC))
         path = write_html(feed, args.out)
     except sqlite3.Error as error:
         print(f"error: {args.db}: {error}", file=sys.stderr)
