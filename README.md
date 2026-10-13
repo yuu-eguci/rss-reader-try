@@ -82,4 +82,4 @@ CI (GitHub Actions) でも同じものを回している。
 - HTML には Content-Security-Policy を付けてスクリプトを動かさない。
 - 出力ファイル名に `/` や `..` が入らないようにしている。
 - フィードの取得にはタイムアウト (30 秒) とサイズ上限 (10 MB) がある。リダイレクトは `http` / `https` だけ追う。
-- Docker イメージは Alpine ベースで小さめ (Debian slim より OS パッケージの既知脆弱性がずっと少ない)。root ではないユーザで動く。
+- Docker イメージは Alpine ベースで小さめ (Debian slim より OS パッケージの既知脆弱性がずっと少ない)。root ではないユーザで動く。`--read-only --cap-drop ALL --security-opt no-new-privileges` を付けても動く (CI で確認している)。

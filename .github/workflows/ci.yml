@@ -29,7 +29,10 @@ jobs:
         shell: bash
         run: |
           docker build -t rss-reader-try .
-          run() { docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try "$@"; }
+          run() {
+            docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+              --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try "$@"
+          }
           run examples/sample-feed.xml | tee /dev/stderr | grep -q '^fetched: 3 articles from "Sample Feed" -> html/Sample-Feed.html$'
           run examples/sample-feed.xml | tee /dev/stderr | grep -q '^cache: 3 articles'
           grep -q 'はじめての RSS リーダ' html/Sample-Feed.html
