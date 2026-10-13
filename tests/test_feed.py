@@ -1,3 +1,4 @@
+import socket
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -159,3 +160,13 @@ def test_truncated_response(feed_server: FeedServer) -> None:
 def test_invalid_url(source: str) -> None:
     with pytest.raises(FeedError, match="cannot read"):
         fetch(source, NOW)
+
+
+def test_unknown_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise socket.gaierror(socket.EAI_AGAIN, "Try again")
+
+    monkeypatch.setattr(socket, "getaddrinfo", fail)
+
+    with pytest.raises(FeedError, match=r"cannot resolve host feeds\.example \(Try again\)$"):
+        read_source("http://feeds.example/feed.xml")

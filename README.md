@@ -69,6 +69,9 @@ uv run rss-reader-try --open examples/sample-feed.xml
 # lint (Ruff) とテスト (pytest) を Docker で回す
 docker build --target dev -t rss-reader-try:dev .
 docker run --rm rss-reader-try:dev
+
+# 依存ライブラリに既知の脆弱性がないか調べる (要ネット)
+docker run --rm rss-reader-try:dev uv audit --locked --preview-features audit-command
 ```
 
 CI (GitHub Actions) でも同じものを回している。
@@ -79,4 +82,4 @@ CI (GitHub Actions) でも同じものを回している。
 - HTML には Content-Security-Policy を付けてスクリプトを動かさない。
 - 出力ファイル名に `/` や `..` が入らないようにしている。
 - フィードの取得にはタイムアウト (30 秒) とサイズ上限 (10 MB) がある。リダイレクトは `http` / `https` だけ追う。
-- Docker イメージは root ではないユーザで動く。
+- Docker イメージは Alpine ベースで小さめ (Debian slim より OS パッケージの既知脆弱性がずっと少ない)。root ではないユーザで動く。

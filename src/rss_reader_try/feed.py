@@ -1,5 +1,6 @@
 """Read a feed from a URL or a local file and turn it into plain data."""
 
+import socket
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -79,6 +80,9 @@ def read_source(
         raise FeedError(f"cannot read {source}: {error}") from error
     except (OSError, HTTPException, ValueError) as error:
         detail = getattr(error, "reason", error)
+        if isinstance(detail, socket.gaierror):
+            # The libc message alone can be cryptic ("Try again" on musl).
+            detail = f"cannot resolve host {urlsplit(source).hostname} ({detail.strerror})"
         raise FeedError(f"cannot read {source}: {detail}") from error
     if len(data) > max_bytes:
         raise FeedError(f"{source} is larger than {max_bytes} bytes")
