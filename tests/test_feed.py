@@ -246,3 +246,66 @@ def test_feed_with_wrong_content_type_still_parses(
 
     assert feed.title == "Sample Feed"
     assert len(feed.articles) == 3
+
+
+def page_linking_to(href: str, feed_type: str = "application/rss+xml") -> bytes:
+    return (
+        "<!doctype html><html><head><title>Blog</title>"
+        f'<link rel="stylesheet" href="/style.css">'
+        f'<link rel="alternate" type="{feed_type}" title="RSS" href="{href}">'
+        "</head><body>hello</body></html>"
+    ).encode()
+
+
+@pytest.mark.parametrize("feed_type", ["application/rss+xml", "application/atom+xml"])
+def test_discover_feed_from_page(feed_server: FeedServer, feed_type: str) -> None:
+    feed_server.routes["/blog/"] = (
+        200,
+        {"Content-Type": "text/html"},
+        page_linking_to("feed.xml", feed_type),
+    )
+    feed_server.routes["/blog/feed.xml"] = (200, {"ETag": '"v1"'}, SAMPLE_FEED.read_bytes())
+
+    feed = fetch(feed_server.url("/blog/"), NOW)
+
+    assert feed.source == feed_server.url("/blog/")
+    assert feed.title == "Sample Feed"
+    assert len(feed.articles) == 3
+    # Validators belong to the feed, but refreshes ask the page, so they are not kept.
+    assert feed.etag is None
+    assert feed.last_modified is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"<!doctype html><html><head><title>No feed</title></head><body></body></html>",
+        page_linking_to("javascript:alert(1)"),
+        page_linking_to("file:///etc/passwd"),
+    ],
+)
+def test_page_without_usable_feed_link(feed_server: FeedServer, body: bytes) -> None:
+    feed_server.routes["/"] = (200, {"Content-Type": "text/html"}, body)
+
+    with pytest.raises(FeedError, match="not a feed"):
+        fetch(feed_server.url("/"), NOW)
+    assert len(feed_server.requests) == 1
+
+
+def test_discovery_follows_one_link_only(feed_server: FeedServer) -> None:
+    feed_server.routes["/a"] = (200, {}, page_linking_to("/b"))
+    feed_server.routes["/b"] = (200, {}, page_linking_to("/c"))
+
+    with pytest.raises(FeedError, match=r"not a feed: http://.*/b \(found in http://.*/a\)"):
+        fetch(feed_server.url("/a"), NOW)
+    assert len(feed_server.requests) == 2
+
+
+def test_no_discovery_for_local_files(tmp_path: Path) -> None:
+    feed = tmp_path / "feed.xml"
+    feed.write_bytes(SAMPLE_FEED.read_bytes())
+    page = tmp_path / "page.html"
+    page.write_bytes(page_linking_to("feed.xml"))
+
+    with pytest.raises(FeedError, match="not a feed"):
+        fetch(str(page), NOW)

@@ -2,14 +2,15 @@
 
 import socket
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
+from html.parser import HTMLParser
 from http import HTTPStatus
 from http.client import HTTPException, HTTPMessage
 from pathlib import Path
 from typing import IO, override
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import feedparser
@@ -18,6 +19,7 @@ USER_AGENT = "rss-reader-try/2.0 (+https://github.com/yuu-eguci/rss-reader-try)"
 TIMEOUT_SECONDS = 30.0
 MAX_BYTES = 10 * 1024 * 1024
 HTTP_SCHEMES = frozenset({"http", "https"})
+FEED_TYPES = frozenset({"application/rss+xml", "application/atom+xml"})
 
 
 class FeedError(Exception):
@@ -133,8 +135,48 @@ def _format_date(parsed: time.struct_time | None) -> str | None:
     return f"{parsed.tm_year:04d}/{parsed.tm_mon:02d}/{parsed.tm_mday:02d}"
 
 
+class _FeedLinkFinder(HTMLParser):
+    """Collect hrefs of <link rel="alternate" type="application/rss+xml" ...> tags."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.hrefs: list[str] = []
+
+    @override
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {name: value or "" for name, value in attrs}
+        if (
+            tag == "link"
+            and "alternate" in values.get("rel", "").lower().split()
+            and values.get("type", "").lower() in FEED_TYPES
+            and values.get("href")
+        ):
+            self.hrefs.append(values["href"])
+
+
+def _discover(page_url: str, data: bytes) -> str | None:
+    """Return the first http(s) feed URL that the HTML page links to."""
+    finder = _FeedLinkFinder()
+    finder.feed(data.decode("utf-8", errors="replace"))
+    for href in finder.hrefs:
+        url = urljoin(page_url, href.strip())
+        if urlsplit(url).scheme in HTTP_SCHEMES:
+            return url
+    return None
+
+
+def _parse(url: str, download: Download) -> feedparser.FeedParserDict | None:
+    headers = {}
+    if urlsplit(url).scheme in HTTP_SCHEMES:
+        headers["content-location"] = url
+    if download.content_type:
+        headers["content-type"] = download.content_type
+    parsed = feedparser.parse(download.data, response_headers=headers)
+    return parsed if parsed.get("version") or parsed.entries else None
+
+
 def fetch(source: str, now: datetime, cached: Feed | None = None) -> Feed:
-    """Read and parse the feed at `source`.
+    """Read and parse the feed at `source`, or the feed that the page at `source` links to.
 
     With `cached`, ask the server only for changes (raises NotModified if there are none).
     """
@@ -143,14 +185,17 @@ def fetch(source: str, now: datetime, cached: Feed | None = None) -> Feed:
         etag=cached.etag if cached else None,
         last_modified=cached.last_modified if cached else None,
     )
-    headers = {}
-    if urlsplit(source).scheme in HTTP_SCHEMES:
-        headers["content-location"] = source
-    if download.content_type:
-        headers["content-type"] = download.content_type
-    parsed = feedparser.parse(download.data, response_headers=headers)
-    if not parsed.get("version") and not parsed.entries:
-        raise FeedError(f"not a feed: {source}")
+    parsed = _parse(source, download)
+    if parsed is None:
+        is_http = urlsplit(source).scheme in HTTP_SCHEMES
+        feed_url = _discover(source, download.data) if is_http else None
+        if feed_url is None:
+            raise FeedError(f"not a feed: {source}")
+        # Refreshes ask the page again, so the feed's validators would be wrong there.
+        download = replace(read_source(feed_url), etag=None, last_modified=None)
+        parsed = _parse(feed_url, download)
+        if parsed is None:
+            raise FeedError(f"not a feed: {feed_url} (found in {source})")
     return Feed(
         source=source,
         title=parsed.feed.get("title") or source,

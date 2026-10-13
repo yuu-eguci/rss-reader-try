@@ -24,7 +24,8 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try exampl
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try examples/sample-feed.xml
 # cache: 3 articles from "Sample Feed" (fetched 2026/10/13 07:15 UTC) -> html/Sample-Feed.html
 
-# 本物のフィードも読める。いくつも渡すと、まとめページ html/index.html も作る
+# 本物のフィードも読める (ページの URL でも、フィードを案内していればそれを読む)。
+# いくつも渡すと、まとめページ html/index.html も作る
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" rss-reader-try examples/sample-feed.xml https://qiita.com/mpyw/feed.atom
 # cache: 3 articles from "Sample Feed" (fetched 2026/10/13 07:15 UTC) -> html/Sample-Feed.html
 # fetched: ... articles from "mpywの記事 - Qiita" -> html/mpywの記事-Qiita.html
@@ -43,7 +44,7 @@ rss-reader-try [-h] [--db DB] [--out OUT] [--max-age HOURS] [--open] FEED [FEED 
 
 | 引数 | 既定値 | 説明 |
 | --- | --- | --- |
-| `FEED` | (必須) | フィードの URL (`http://` / `https://`) かローカルファイルのパス。いくつでも (同じものは 1 回だけ読む) |
+| `FEED` | (必須) | フィードの URL (`http://` / `https://`) かローカルファイルのパス。フィードを `<link rel="alternate">` で案内しているページの URL でもいい。いくつでも (同じものは 1 回だけ読む) |
 | `--db` | `my_rss.sqlite3` | キャッシュ用 SQLite ファイル。なければ作る |
 | `--out` | `html` | HTML の出力先ディレクトリ。なければ作る |
 | `--max-age` | `6` | キャッシュの有効期間 (時間)。`0` なら毎回取りに行く |
