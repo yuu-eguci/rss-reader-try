@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
 from pathlib import Path
+from typing import Literal
 from xml.etree import ElementTree
 
 from rss_reader_try import store
@@ -24,6 +25,7 @@ from rss_reader_try.render import (
 
 PROG = "rss-reader-try"
 INDEX = "index.html"
+type Origin = Literal["cache", "fetched", "updated", "not modified"]
 # C0/C1 controls and bidi overrides: feed text must not drive the terminal.
 UNSAFE_FOR_TERMINAL = re.compile("[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
 
@@ -74,9 +76,10 @@ def is_fresh(fetched_at: datetime, now: datetime, max_age: timedelta) -> bool:
     return now - fetched_at < max_age
 
 
-def _get_feed(args: argparse.Namespace, source: str, now: datetime) -> tuple[Feed, str]:
-    """Return the feed and where it came from: "cache", "fetched", "updated" or "not modified"."""
+def _get_feed(args: argparse.Namespace, source: str, now: datetime) -> tuple[Feed, Origin]:
+    """Return the feed and where it came from."""
     cached = store.load(args.db, source)
+    origin: Origin
     if cached is None:
         feed, origin = fetch(source, now), "fetched"
     elif is_fresh(cached.fetched_at, now, args.max_age):
@@ -104,7 +107,7 @@ def _write(path: Path, html: str) -> Path:
     return path
 
 
-def _report(feed: Feed, origin: str, path: Path) -> None:
+def _report(feed: Feed, origin: Origin, path: Path) -> None:
     summary = f'{plural(len(feed.articles), "article")} from "{feed.title}"'
     if origin == "cache":
         _say(f"cache: {summary} (fetched {format_time(feed.fetched_at)}) -> {path}")
