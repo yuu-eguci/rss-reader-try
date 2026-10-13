@@ -33,7 +33,8 @@ ORIGINAL_SCHEMA = """CREATE TABLE "rss_data" (
 
 def count_rows(db: Path) -> int:
     with closing(sqlite3.connect(db)) as connection:
-        return connection.execute("SELECT COUNT(*) FROM rss_data").fetchone()[0]
+        count: int = connection.execute("SELECT COUNT(*) FROM rss_data").fetchone()[0]
+    return count
 
 
 def test_load_from_new_database(tmp_path: Path) -> None:

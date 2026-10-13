@@ -1,12 +1,23 @@
 import shutil
+import webbrowser
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from conftest import FIXTURES, SAMPLE_FEED, FeedServer
 
-from rss_reader_try import cli
 from rss_reader_try.cli import is_fresh, run
+
+
+def fake_browser(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    opened: list[str] = []
+
+    def fake_open(url: str) -> bool:
+        opened.append(url)
+        return True
+
+    monkeypatch.setattr(webbrowser, "open", fake_open)
+    return opened
 
 
 @pytest.fixture
@@ -90,8 +101,7 @@ def test_invalid_max_age(workdir: Path, value: str, capsys: pytest.CaptureFixtur
 
 
 def test_open_in_browser(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    opened: list[str] = []
-    monkeypatch.setattr(cli.webbrowser, "open", lambda url: opened.append(url) or True)
+    opened = fake_browser(monkeypatch)
 
     assert run(["--open", "feed.xml"]) == 0
 
@@ -101,7 +111,7 @@ def test_open_in_browser(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None
 def test_open_without_browser_warns(
     workdir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli.webbrowser, "open", lambda _url: False)
+    monkeypatch.setattr(webbrowser, "open", lambda _url: False)
 
     assert run(["--open", "feed.xml"]) == 0
 
@@ -197,8 +207,7 @@ def test_same_title_gets_another_file(workdir: Path, capsys: pytest.CaptureFixtu
 
 
 def test_open_multiple_feeds_opens_index(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    opened: list[str] = []
-    monkeypatch.setattr(cli.webbrowser, "open", lambda url: opened.append(url) or True)
+    opened = fake_browser(monkeypatch)
 
     assert run(["--open", "feed.xml", "atom.xml"]) == 0
 

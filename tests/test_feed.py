@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from conftest import FIXTURES, SAMPLE_FEED, FeedServer
 
-from rss_reader_try.feed import Article, FeedError, fetch, read_source
+from rss_reader_try.feed import Article, FeedError, NotModified, fetch, read_source
 
 NOW = datetime(2026, 10, 13, 7, 15, tzinfo=UTC)
 
@@ -180,18 +180,18 @@ def test_fetch_keeps_validators(feed_server: FeedServer) -> None:
 
     feed = fetch(feed_server.url("/feed"), NOW)
 
-    assert feed is not None
     assert feed.etag == '"v1"'
     assert feed.last_modified == "Sun, 03 Apr 2016 12:00:00 GMT"
 
 
-def test_not_modified_returns_none(feed_server: FeedServer) -> None:
+def test_not_modified(feed_server: FeedServer) -> None:
     validators = {"ETag": '"v1"', "Last-Modified": "Sun, 03 Apr 2016 12:00:00 GMT"}
     feed_server.routes["/feed"] = (200, validators, SAMPLE_FEED.read_bytes())
     cached = fetch(feed_server.url("/feed"), NOW)
     feed_server.routes["/feed"] = (304, {}, b"")
 
-    assert fetch(feed_server.url("/feed"), NOW, cached) is None
+    with pytest.raises(NotModified):
+        fetch(feed_server.url("/feed"), NOW, cached)
 
     assert feed_server.requests[1]["If-None-Match"] == '"v1"'
     assert feed_server.requests[1]["If-Modified-Since"] == "Sun, 03 Apr 2016 12:00:00 GMT"
@@ -206,9 +206,8 @@ def test_unexpected_not_modified_is_an_error(feed_server: FeedServer) -> None:
 
 def test_local_file_ignores_validators() -> None:
     cached = fetch(str(SAMPLE_FEED), NOW)
-    assert cached is not None
 
-    assert fetch(str(SAMPLE_FEED), NOW, replace(cached, etag='"v1"')) is not None
+    assert fetch(str(SAMPLE_FEED), NOW, replace(cached, etag='"v1"')).title == "Sample Feed"
 
 
 def test_charset_from_http_header(feed_server: FeedServer) -> None:
@@ -221,7 +220,6 @@ def test_charset_from_http_header(feed_server: FeedServer) -> None:
 
     feed = fetch(feed_server.url("/sjis"), NOW)
 
-    assert feed is not None
     assert feed.title == "東方スレ観測所"
     assert feed.articles[0].title == "こいしにマシンガン"
 
@@ -235,7 +233,6 @@ def test_charset_from_xml_declaration(tmp_path: Path) -> None:
 
     feed = fetch(str(path), NOW)
 
-    assert feed is not None
     assert feed.title == "日本語のフィード"
 
 
@@ -247,6 +244,5 @@ def test_feed_with_wrong_content_type_still_parses(
 
     feed = fetch(feed_server.url("/feed"), NOW)
 
-    assert feed is not None
     assert feed.title == "Sample Feed"
     assert len(feed.articles) == 3

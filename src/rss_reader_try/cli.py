@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from rss_reader_try import store
-from rss_reader_try.feed import Feed, FeedError, fetch
+from rss_reader_try.feed import Feed, FeedError, NotModified, fetch
 from rss_reader_try.render import (
     format_time,
     output_filename,
@@ -61,19 +61,18 @@ def is_fresh(fetched_at: datetime, now: datetime, max_age: timedelta) -> bool:
 def _get_feed(args: argparse.Namespace, source: str, now: datetime) -> tuple[Feed, str]:
     """Return the feed and where it came from: "cache", "fetched" or "not modified"."""
     cached = store.load(args.db, source)
-    if cached is not None and is_fresh(cached.fetched_at, now, args.max_age):
+    if cached is None:
+        feed, origin = fetch(source, now), "fetched"
+    elif is_fresh(cached.fetched_at, now, args.max_age):
         return cached, "cache"
-    try:
-        feed = fetch(source, now, cached)
-    except FeedError as error:
-        if cached is None:
-            raise
-        print(f"warning: {error}; using the cached copy", file=sys.stderr)
-        return cached, "cache"
-    if feed is None:  # the server says `cached` is still up to date
-        feed, origin = replace(cached, fetched_at=now), "not modified"
     else:
-        origin = "fetched"
+        try:
+            feed, origin = fetch(source, now, cached), "fetched"
+        except NotModified:
+            feed, origin = replace(cached, fetched_at=now), "not modified"
+        except FeedError as error:
+            print(f"warning: {error}; using the cached copy", file=sys.stderr)
+            return cached, "cache"
     store.save(args.db, feed)
     return feed, origin
 

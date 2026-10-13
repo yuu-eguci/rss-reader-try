@@ -39,8 +39,7 @@ class FeedServer:
         self.httpd.daemon_threads = True
 
     def url(self, path: str) -> str:
-        host, port = self.httpd.server_address[:2]
-        return f"http://{host}:{port}{path}"
+        return f"http://127.0.0.1:{self.httpd.server_port}{path}"
 
 
 @pytest.fixture

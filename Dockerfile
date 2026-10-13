@@ -21,7 +21,7 @@ COPY src ./src
 COPY tests ./tests
 COPY examples ./examples
 RUN uv sync --locked
-CMD ["sh", "-c", "ruff check . && ruff format --check . && pytest"]
+CMD ["sh", "-c", "ruff check . && ruff format --check . && mypy && pytest"]
 
 FROM base AS build
 RUN uv sync --locked --no-dev --no-install-project
