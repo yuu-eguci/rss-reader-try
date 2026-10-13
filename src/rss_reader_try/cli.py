@@ -24,11 +24,11 @@ INDEX = "index.html"
 def _hours(value: str) -> timedelta:
     try:
         hours = float(value)
-    except ValueError:
-        hours = -1.0
-    if not hours >= 0:
-        raise argparse.ArgumentTypeError(f"must be a number of hours >= 0: {value!r}")
-    return timedelta(hours=hours)
+        if hours >= 0:
+            return timedelta(hours=hours)
+    except ValueError, OverflowError:
+        pass
+    raise argparse.ArgumentTypeError(f"must be a number of hours >= 0: {value!r}")
 
 
 def build_parser() -> argparse.ArgumentParser:

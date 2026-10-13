@@ -114,3 +114,15 @@ def test_save_and_load_validators(tmp_path: Path) -> None:
     save(db, feed)
 
     assert load(db, FEED.source) == feed
+
+
+def test_time_without_timezone_is_treated_as_missing(tmp_path: Path) -> None:
+    db = tmp_path / "naive.sqlite3"
+    save(db, FEED)
+    with closing(sqlite3.connect(db)) as connection, connection:
+        connection.execute(
+            "UPDATE rss_data SET jsonData = json_set(jsonData, '$.fetchedAt', ?)",
+            ("2026-10-13T07:15:00",),
+        )
+
+    assert load(db, FEED.source) is None

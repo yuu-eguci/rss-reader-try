@@ -91,7 +91,7 @@ def test_unwritable_out_exits_with_1(workdir: Path, capsys: pytest.CaptureFixtur
     assert capsys.readouterr().err.startswith("error: ")
 
 
-@pytest.mark.parametrize("value", ["-1", "abc"])
+@pytest.mark.parametrize("value", ["-1", "abc", "nan", "inf", "1e20"])
 def test_invalid_max_age(workdir: Path, value: str, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as excinfo:
         run(["--max-age", value, "feed.xml"])

@@ -42,13 +42,14 @@ def load(db: Path, source: str) -> Feed | None:
         return None
     try:
         data = json.loads(row[0])
-        if data["format"] != FORMAT:
+        fetched_at = datetime.fromisoformat(data["fetchedAt"])
+        if data["format"] != FORMAT or fetched_at.tzinfo is None:
             return None
         return Feed(
             source=data["source"],
             title=data["title"],
             site_url=data["siteUrl"],
-            fetched_at=datetime.fromisoformat(data["fetchedAt"]),
+            fetched_at=fetched_at,
             articles=tuple(Article(**article) for article in data["articles"]),
             etag=data.get("etag"),
             last_modified=data.get("lastModified"),
